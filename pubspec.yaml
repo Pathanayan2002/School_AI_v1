@@ -1,0 +1,42 @@
+name: Ai_School_App
+description: "It is an app for school management system, which is developed using Flutter. It provides features like attendance management, result management, and MDM (Mid-Day Meal) tracking."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.6.1 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  intl: ^0.18.1
+  cupertino_icons: ^1.0.8
+  image_picker: ^1.1.2
+  http: ^1.4.0
+  dio: ^5.8.0
+  table_calendar: ^3.0.1
+  flutter_secure_storage: ^9.2.4
+  excel: ^4.0.6
+  open_file: ^3.2.1
+  path_provider: ^2.1.1
+  provider: ^6.1.2
+  flutter_spinkit: ^5.2.1
+  universal_io: ^2.2.2
+  google_fonts: ^6.2.1
+  fl_chart: ^1.0.0
+  cookie_jar: ^4.0.8
+  dio_cookie_manager: ^3.2.0
+  permission_handler: ^11.0.1
+  file_saver: ^0.2.14
+  animate_do: ^4.2.0
+  dropdown_button2: ^2.3.9
+  device_info_plus: ^9.0.0
+  jwt_decoder: ^2.0.1
+  month_picker_dialog: ^2.12.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: ^0.13.1
+  flutter_lints: ^5.0.0
+
