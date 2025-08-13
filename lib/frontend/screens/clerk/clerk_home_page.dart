@@ -29,6 +29,7 @@ class _ClerkHomePageState extends State<ClerkHomePage> {
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
   String? _errorMessage;
+  String? _schoolId;
 
   @override
   void initState() {
@@ -37,11 +38,27 @@ class _ClerkHomePageState extends State<ClerkHomePage> {
   }
 
   Future<void> _checkAuthorization() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       final userRole = await _storage.read(key: 'user_role');
-      final token = await _storage.read(key: 'jwt_token');
-      if (token == null || userRole != 'Clerk') {
+      final token = await _storage.read(key: 'token'); // Use 'token' to match LoginPage
+      _schoolId = await _storage.read(key: 'school_id');
+
+      if (token == null || userRole != 'Clerk' || _schoolId == null || _schoolId!.isEmpty) {
         if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Invalid session or role. Please log in again.',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
           Navigator.pushReplacementNamed(context, '/login');
         }
         return;
@@ -82,14 +99,26 @@ class _ClerkHomePageState extends State<ClerkHomePage> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(response['message'] ?? 'Logout failed')),
+            SnackBar(
+              content: Text(
+                response['message'] ?? 'Logout failed',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: Colors.redAccent,
+            ),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error logging out: $e')),
+          SnackBar(
+            content: Text(
+              'Error logging out: $e',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
@@ -143,6 +172,144 @@ class _ClerkHomePageState extends State<ClerkHomePage> {
           ),
         ),
         backgroundColor: const Color(0xFF4A00E0),
+        leading: IconButton(
+          icon: const Icon(Icons.menu, color: Colors.white),
+          onPressed: () => Scaffold.of(context).openDrawer(),
+        ),
+      ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                color: Color(0xFF4A00E0),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Clerk Dashboard',
+                    style: GoogleFonts.poppins(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _userData?['name'] ?? 'Clerk',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white70,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _buildDrawerItem(
+              title: 'Add New Student',
+              icon: Icons.person_add,
+              onTap: () {
+                if (_schoolId == null || _schoolId!.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'School ID not found. Please log in again.',
+                        style: GoogleFonts.poppins(),
+                      ),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AddNewStudent(schoolId: _schoolId!),
+                  ),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              title: 'Teacher Attendance',
+              icon: Icons.event_available,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TeacherAttendanceScreen()),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              title: 'Teacher Attendance Records',
+              icon: Icons.event_note,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TeacherAttendanceRecord()),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              title: 'Student Record',
+              icon: Icons.school,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const StudentRecord()),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              title: 'View Student Record',
+              icon: Icons.visibility,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ViewStudentRecordPage(teacherId: widget.clerkId.toString()),
+                  ),
+                );
+              },
+            ),
+            // _buildDrawerItem(
+            //   title: 'Manage Subjects',
+            //   icon: Icons.book,
+            //   onTap: () {
+            //     Navigator.push(
+            //       context,
+            //       MaterialPageRoute(builder: (context) => const ManageSubjectsScreen()),
+            //     );
+            //   },
+            // ),
+            _buildDrawerItem(
+              title: 'Manage Roles',
+              icon: Icons.admin_panel_settings,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const RolePage()),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              title: 'MDM Dashboard',
+              icon: Icons.food_bank,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const TeacherDashboardWireframe()),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              title: 'Logout',
+              icon: Icons.logout,
+              onTap: _logout,
+            ),
+          ],
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -208,9 +375,23 @@ class _ClerkHomePageState extends State<ClerkHomePage> {
                             title: 'Add New Student',
                             icon: Icons.person_add,
                             onTap: () {
+                              if (_schoolId == null || _schoolId!.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'School ID not found. Please log in again.',
+                                      style: GoogleFonts.poppins(),
+                                    ),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                                return;
+                              }
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (context) => const AddNewStudent(schoolId: '',)),
+                                MaterialPageRoute(
+                                  builder: (context) => AddNewStudent(schoolId: _schoolId!),
+                                ),
                               );
                             },
                           ),
@@ -224,16 +405,16 @@ class _ClerkHomePageState extends State<ClerkHomePage> {
                               );
                             },
                           ),
-                                               _buildDrawerItem(
-  title: 'Teacher Attendance Records',
-  icon: Icons.event_note,
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const TeacherAttendanceRecord()),
-    );
-  },
-),
+                          _buildDrawerItem(
+                            title: 'Teacher Attendance Records',
+                            icon: Icons.event_note,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const TeacherAttendanceRecord()),
+                              );
+                            },
+                          ),
                           _buildDrawerItem(
                             title: 'Student Record',
                             icon: Icons.school,
@@ -250,11 +431,12 @@ class _ClerkHomePageState extends State<ClerkHomePage> {
                             onTap: () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (context) => const ViewStudentRecordPage()),
+                                MaterialPageRoute(
+                                  builder: (context) => ViewStudentRecordPage(teacherId: widget.clerkId.toString()),
+                                ),
                               );
                             },
                           ),
-                        
                           // _buildDrawerItem(
                           //   title: 'Manage Subjects',
                           //   icon: Icons.book,
@@ -275,7 +457,6 @@ class _ClerkHomePageState extends State<ClerkHomePage> {
                               );
                             },
                           ),
-     
                           _buildDrawerItem(
                             title: 'MDM Dashboard',
                             icon: Icons.food_bank,
