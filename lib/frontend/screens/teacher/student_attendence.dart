@@ -1,9 +1,18 @@
+// student_attendence.dart (corrected: take subjectId and schoolId, load students by subject, fix attendanceData to store per student per month total/present, submit per month, use Stateful dialog for live percentage, remove global totals)
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../services/api_client.dart';
+import 'package:month_picker_dialog/month_picker_dialog.dart';
+import '../services/api_client.dart'; // Make sure this import is correct for your project
 
 class StudentAttendanceScreen extends StatefulWidget {
-  const StudentAttendanceScreen({super.key});
+  final String subjectId;
+  final String schoolId;
+  const StudentAttendanceScreen({
+    super.key,
+    required this.subjectId,
+    required this.schoolId,
+  });
 
   @override
   State<StudentAttendanceScreen> createState() => _StudentAttendanceScreenState();
@@ -14,8 +23,8 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
 
   List<Map<String, dynamic>> allStudents = [];
 
-  // Map: studentId -> Map<dateString, status>
-  Map<int, Map<String, String>> attendanceData = {};
+  // For storing the attendance data: {studentId: {month: {'totalDays': int, 'presentDays': int}}}
+  Map<int, Map<String, Map<String, int>>> attendanceData = {};
 
   @override
   void initState() {
@@ -23,150 +32,59 @@ class _StudentAttendanceScreenState extends State<StudentAttendanceScreen> {
     _loadStudents();
   }
 
+  // Method to load students from the API, filtered by subject
   Future<void> _loadStudents() async {
-    final res = await _apiService.getAllStudents();
-    if (res['success'] == true && res['data'] is List) {
+    final response = await _apiService.getStudentsBySubject(widget.subjectId);
+    if (response['success'] == true && response['data'] is List) {
       setState(() {
-        allStudents = List<Map<String, dynamic>>.from(res['data']);
+        allStudents = List<Map<String, dynamic>>.from(response['data'])
+            .where((student) => student['schoolId'] == widget.schoolId)
+            .toList();
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Failed to load students")),
+        SnackBar(content: Text(response['message'] ?? "Failed to load students")),
       );
     }
   }
 
-  void _openMonthlyAttendanceDialog(BuildContext context, int studentId, String studentName) {
-    DateTime initialDate = DateTime.now();
-Future<DateTime?> showMonthPicker({
-  required BuildContext context,
-  required DateTime initialDate,
-  required DateTime firstDate,
-  required DateTime lastDate,
-}) async {
-  final selected = await showDatePicker(
-    context: context,
-    initialDate: initialDate,
-    firstDate: firstDate,
-    lastDate: lastDate,
-    initialEntryMode: DatePickerEntryMode.calendarOnly,
-    initialDatePickerMode: DatePickerMode.year,
-  );
-  return selected;
-}
+  // Method to open the month picker and show the dialog to input attendance data
+  void _openAttendanceDialog(BuildContext context, int studentId, String studentName) {
     showMonthPicker(
       context: context,
-      firstDate: DateTime(2023),
+      firstDate: DateTime(2020),
       lastDate: DateTime(2100),
-      initialDate: initialDate,
+      initialDate: DateTime.now(),
     ).then((pickedMonth) {
       if (pickedMonth != null) {
-        _showDailyAttendanceForMonth(context, studentId, studentName, pickedMonth);
+        _showAttendanceInputDialog(context, studentId, studentName, pickedMonth);
       }
     });
   }
 
-  Future<void> _showDailyAttendanceForMonth(
-      BuildContext context, int studentId, String studentName, DateTime month) async {
-    final DateFormat monthFormat = DateFormat('yyyy-MM');
-    final String monthKey = monthFormat.format(month);
-
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-
-    // Initialize map for this student and month if not present
-    attendanceData.putIfAbsent(studentId, () => {});
-
-    final Map<String, String> studentAttendance = attendanceData[studentId]!;
-
-    await showDialog(
+  // Method to show the dialog where users can input total school days and absent days
+  void _showAttendanceInputDialog(BuildContext context, int studentId, String studentName, DateTime selectedMonth) {
+    showDialog(
       context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, dialogSetState) {
-            return AlertDialog(
-              title: Text("Attendance for $studentName - ${DateFormat('MMM yyyy').format(month)}"),
-              content: SizedBox(
-                width: double.maxFinite,
-                height: 400,
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (int day = 1; day <= daysInMonth; day++)
-                        _buildDayRow(
-                          day: day,
-                          month: month,
-                          studentAttendance: studentAttendance,
-                          dialogSetState: dialogSetState,
-                          studentId: studentId,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(onPressed: Navigator.of(context).pop, child: const Text('Cancel')),
-                TextButton(
-                  onPressed: () {
-                    // Save changes and close dialog
-                    attendanceData[studentId] = studentAttendance;
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildDayRow({
-    required int day,
-    required DateTime month,
-    required Map<String, String> studentAttendance,
-    required Function dialogSetState,
-    required int studentId,
-  }) {
-    final dateStr = "${month.year}-${month.month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}";
-
-    final currentStatus = studentAttendance[dateStr] ?? 'Not Marked';
-
-    return ListTile(
-      title: Text("Day $day"),
-      subtitle: Text("Status: $currentStatus"),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ElevatedButton(
-            onPressed: () {
-              dialogSetState(() {
-                studentAttendance[dateStr] = 'Present';
-              });
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: currentStatus == 'Present' ? Colors.green : Colors.grey[400],
-            ),
-            child: const Text('P'),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton(
-            onPressed: () {
-              dialogSetState(() {
-                studentAttendance[dateStr] = 'Absent';
-              });
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: currentStatus == 'Absent' ? Colors.red : Colors.grey[400],
-            ),
-            child: const Text('A'),
-          ),
-        ],
+      builder: (context) => _AttendanceInputDialog(
+        studentName: studentName,
+        selectedMonth: selectedMonth,
+        onSave: (totalDays, absentDays) {
+          final presentDays = totalDays - absentDays;
+          final monthStr = DateFormat('MMMM yyyy').format(selectedMonth);
+          setState(() {
+            attendanceData.putIfAbsent(studentId, () => {});
+            attendanceData[studentId]![monthStr] = {
+              'totalDays': totalDays,
+              'presentDays': presentDays,
+            };
+          });
+        },
       ),
     );
   }
 
+  // Method to submit the attendance for all students per month
   Future<void> submitAllAttendance() async {
     if (attendanceData.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -175,40 +93,42 @@ Future<DateTime?> showMonthPicker({
       return;
     }
 
+    bool allSuccess = true;
     for (var studentEntry in attendanceData.entries) {
-      final studentId = studentEntry.key.toString();
-      final attendanceMap = studentEntry.value;
+      final studentId = studentEntry.key;
+      final monthsData = studentEntry.value;
 
-      final dates = attendanceMap.keys.toList();
-      final statuses = attendanceMap.values.toList();
+      for (var monthEntry in monthsData.entries) {
+        final month = monthEntry.key;
+        final data = monthEntry.value;
+        final totalDays = data['totalDays']!;
+        final presentDays = data['presentDays']!;
 
-      final totalDays = dates.length;
-      final presentDays = statuses.where((status) => status == 'Present').length;
-
-      final month = DateFormat('MMMM yyyy').format(DateTime.parse(dates.first));
-
-      final res = await _apiService.createAttendance(
-        studentId: studentId,
-        month: month,
-        totalDays: totalDays,
-        presentDays: presentDays,
-        status: presentDays > 0 ? "Partial" : "None", // Customize logic as needed
-        date: dates.join(','), // Join all dates
-      );
-
-      if (res['success'] != true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Failed for ID: $studentId")),
+        final res = await _apiService.createAttendance(
+          studentId: studentId.toString(),
+          month: month,
+          totalDays: totalDays,
+          presentDays: presentDays,
+          status: '', date: '',
         );
+
+        if (res['success'] != true) {
+          allSuccess = false;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed for ID: $studentId, Month: $month")),
+          );
+        }
       }
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Attendance submitted successfully")),
-    );
-
-    attendanceData.clear();
-    setState(() {});
+    if (allSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Attendance submitted successfully")),
+      );
+      setState(() {
+        attendanceData.clear();
+      });
+    }
   }
 
   @override
@@ -237,7 +157,7 @@ Future<DateTime?> showMonthPicker({
                     child: ListTile(
                       title: Text(studentName),
                       subtitle: Text("ID: $studentId"),
-                      onTap: () => _openMonthlyAttendanceDialog(context, studentId, studentName),
+                      onTap: () => _openAttendanceDialog(context, studentId, studentName),
                     ),
                   );
                 },
@@ -255,6 +175,106 @@ Future<DateTime?> showMonthPicker({
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AttendanceInputDialog extends StatefulWidget {
+  final String studentName;
+  final DateTime selectedMonth;
+  final Function(int totalDays, int absentDays) onSave;
+
+  const _AttendanceInputDialog({
+    required this.studentName,
+    required this.selectedMonth,
+    required this.onSave,
+  });
+
+  @override
+  _AttendanceInputDialogState createState() => _AttendanceInputDialogState();
+}
+
+class _AttendanceInputDialogState extends State<_AttendanceInputDialog> {
+  final TextEditingController totalDaysController = TextEditingController();
+  final TextEditingController absentDaysController = TextEditingController();
+  double attendancePercentage = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    totalDaysController.addListener(_updatePercentage);
+    absentDaysController.addListener(_updatePercentage);
+  }
+
+  void _updatePercentage() {
+    final totalDays = int.tryParse(totalDaysController.text) ?? 0;
+    final absentDays = int.tryParse(absentDaysController.text) ?? 0;
+    final presentDays = totalDays - absentDays;
+    setState(() {
+      attendancePercentage = totalDays > 0 ? (presentDays / totalDays) * 100 : 0.0;
+    });
+  }
+
+  @override
+  void dispose() {
+    totalDaysController.removeListener(_updatePercentage);
+    absentDaysController.removeListener(_updatePercentage);
+    totalDaysController.dispose();
+    absentDaysController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text("Attendance for ${widget.studentName} - ${DateFormat('MMM yyyy').format(widget.selectedMonth)}"),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Date selection
+          Text("Select the month for attendance: ${DateFormat('MMMM yyyy').format(widget.selectedMonth)}"),
+          const SizedBox(height: 16),
+          
+          // Text fields for inputting total days and absent days
+          TextField(
+            controller: totalDaysController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Total School Days',
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: absentDaysController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Absent Days',
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Display attendance percentage
+          Text(
+            'Attendance Percentage: ${attendancePercentage.toStringAsFixed(2)}%',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            final totalDays = int.tryParse(totalDaysController.text) ?? 0;
+            final absentDays = int.tryParse(absentDaysController.text) ?? 0;
+            widget.onSave(totalDays, absentDays);
+            Navigator.of(context).pop();
+          },
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

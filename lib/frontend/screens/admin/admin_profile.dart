@@ -1,12 +1,13 @@
+import 'package:Ai_School_App/frontend/screens/auth/login.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart'; // Ensured
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../services/api_client.dart';
 
 class ProfilePage extends StatefulWidget {
-  final String userId;
+  static String routeName = '/admin_profile';
 
-  const ProfilePage({super.key, required this.userId});
+  const ProfilePage({super.key});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -17,121 +18,168 @@ class _ProfilePageState extends State<ProfilePage> {
   final ApiService _apiService = ApiService();
   Map<String, dynamic>? userData;
   bool _isLoading = true;
-  bool _hasError = false;
-
-  static const allowedRoles = ['Admin', 'Teacher', 'Clerk', 'MDM'];
+  bool _isLoggingOut = false;
 
   @override
   void initState() {
     super.initState();
     _fetchUserProfile();
   }
-
   Future<void> _fetchUserProfile() async {
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-    });
     try {
-      final response = await _apiService.getUserById(widget.userId);
-      if (!mounted) return;
-
-      if (response['success'] && response['data'] != null) {
-        final role = response['data']['role']?.toString();
-        if (!allowedRoles.contains(role)) {
-          _showSnackBar('Access denied: Invalid role');
-          Navigator.pop(context);
-          return;
+      final enrollId = await _storage.read(key: 'enrollment_id');
+      if (enrollId == null) {
+        _showErrorDialog("Session expired. Please log in again.");
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
         }
+        return;
+      }
 
-        setState(() {
-          userData = {
-            ...response['data'],
-            'id': response['data']['id']?.toString() ?? response['data']['_id']?.toString(),
-          };
-          _isLoading = false;
-        });
+      final response = await _apiService.getRequest('/user/All',);
+
+      if (response['success'] == true && response['data'] is List) {
+        final List<dynamic> allUsers = response['data'];
+
+        final user = allUsers.firstWhere(
+          (u) => u['enrollmentId'].toString() == enrollId,
+          orElse: () => {},
+        );
+
+        if (user.isNotEmpty) {
+          setState(() {
+            userData = user;
+            _isLoading = false;
+          });
+        } else {
+          _showErrorDialog("User not found.");
+        }
       } else {
-        _handleError(response['message'] ?? 'User not found');
+        _showErrorDialog("Invalid response from server: ${response['message'] ?? 'Unknown error'}");
       }
     } catch (e) {
-      if (!mounted) return;
-      _handleError('Error fetching profile: $e');
+      debugPrint('Fetch profile error: $e');
+      _showErrorDialog("An error occurred: $e");
     }
   }
 
-  void _handleError(String message) {
-    setState(() {
-      _isLoading = false;
-      _hasError = true;
-    });
-    _showErrorDialog(message);
-  }
+Future<void> _logout() async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Confirm Logout"),
+      content: const Text("Are you sure you want to log out?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text("Cancel"),
+        ),
+       TextButton(
+  onPressed: () => Navigator.of(context).pop(true),
+  child: const Text(
+    "Logout",
+    style: TextStyle(color: Colors.white),
+  ),
+),
 
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
+      ],
+    ),
+  );
 
-  Future<void> _logout() async {
-    try {
-      final result = await _apiService.logout();
-      if (!mounted) return;
+  if (confirm != true) return;
 
-      if (result['success']) {
-        await _storage.deleteAll();
-        _showSnackBar(result['message'] ?? 'Logged out successfully');
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (_) => false);
-      } else {
-        _showErrorDialog(result['message'] ?? 'Logout failed');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      _showErrorDialog('Logout failed: $e');
-    }
-  }
+  setState(() {
+    _isLoggingOut = true;
+  });
 
-  void _showErrorDialog(String message) {
+  try {
+    final result = await _apiService.logout();
+    debugPrint('Logout response: $result');
+
     if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Error', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Text(message, style: GoogleFonts.poppins()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('OK', style: GoogleFonts.poppins()),
-          ),
-          if (_hasError)
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _fetchUserProfile();
-              },
-              child: Text('Retry', style: GoogleFonts.poppins(color: Colors.deepPurple)),
-            ),
-        ],
+
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message'] ?? "Logged out successfully"),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) {
+        // Replace the current route with LoginPage
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Logout failed: ${result['message'] ?? 'Unknown error'}"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  } catch (e) {
+    debugPrint('Logout error: $e');
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Logout failed: $e"),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
       ),
     );
+  } finally {
+    if (mounted) {
+      setState(() {
+        _isLoggingOut = false;
+      });
+    }
+  }
+}
+
+ void _showErrorDialog(String message) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Error"),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text("OK"),
+              )
+            ],
+          ),
+        );
+      }
+    });
   }
 
   Widget _buildInfoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             flex: 4,
             child: Text(
-              "$label:",
-              style: GoogleFonts.poppins(
+              label,
+              style: TextStyle(
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
-                fontSize: 15,
+                color: Colors.grey[600],
+                fontSize: 16,
               ),
             ),
           ),
@@ -139,7 +187,11 @@ class _ProfilePageState extends State<ProfilePage> {
             flex: 6,
             child: Text(
               value,
-              style: GoogleFonts.poppins(fontSize: 15),
+              style: const TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 16,
+              ),
+              textAlign: TextAlign.right,
             ),
           ),
         ],
@@ -147,257 +199,110 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
- @override
-Widget build(BuildContext context) {
-  final size = MediaQuery.of(context).size;
+  Widget _buildDivider() {
+    return Divider(
+      thickness: 1,
+      color: Colors.deepPurple.shade100,
+    );
+  }
 
-  return Theme(
-    data: ThemeData(
-      primarySwatch: Colors.deepPurple,
-      textTheme: GoogleFonts.poppinsTextTheme(),
-    ),
-    child: Scaffold(
-      body: Container(
-        height: size.height,
-        width: size.width,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF4A00E0), Color(0xFF8E2DE2)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Colors.white))
-              : _hasError
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Failed to load profile',
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _fetchUserProfile,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.deepPurple,
-                            ),
-                            child: const Text('Retry'),
-                          ),
+  @override
+  Widget build(BuildContext context) {
+    debugPrint('Building ProfilePage, _isLoading: $_isLoading, _isLoggingOut: $_isLoggingOut');
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: const Text("Profile"),
+        backgroundColor: Colors.deepPurple,
+        centerTitle: true,
+      ),
+      body: SafeArea(
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+                child: Column(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.deepPurple.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          )
                         ],
                       ),
-                    )
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: 10),
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black26,
-                                  blurRadius: 15,
-                                  offset: Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: CircleAvatar(
-                              radius: 60,
-                              backgroundColor: Colors.white,
-                              child: userData?['photo']?.toString().isNotEmpty ?? false
-                                  ? ClipOval(
-                                      child: Image.network(
-                                        userData!['photo'],
-                                        width: 120,
-                                        height: 120,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            const Icon(Icons.person, size: 70, color: Colors.deepPurple),
-                                      ),
-                                    )
-                                  : const Icon(Icons.person, size: 70, color: Colors.deepPurple),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Text(
-                            userData?['name']?.toString() ?? 'User',
-                            style: GoogleFonts.poppins(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            userData?['role']?.toString() ?? 'Role',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white70,
-                            ),
-                          ),
-                          const SizedBox(height: 30),
-                          Container(
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black12,
-                                  blurRadius: 10,
-                                  offset: Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
-                            child: Column(
-                              children: [
-                                _buildInfoRow('Registration No', userData?['enrollmentId']?.toString() ?? 'N/A'),
-                                const Divider(thickness: 1, color: Colors.deepPurple),
-                                _buildInfoRow('Email', userData?['email']?.toString() ?? 'N/A'),
-                                const Divider(thickness: 1, color: Colors.deepPurple),
-                                _buildInfoRow('Contact', userData?['phone']?.toString() ?? 'N/A'),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 40),
-                          ElevatedButton.icon(
-                            onPressed: _logout,
-                            icon: const Icon(Icons.logout),
-                            label: const Text('Logout'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent,
-                              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              elevation: 5,
-                              shadowColor: Colors.redAccent.withOpacity(0.5),
-                              foregroundColor: Colors.white
-                            ),
-                          ),
-                          const SizedBox(height: 30),
-                        ],
+                      child: const CircleAvatar(
+                        radius: 60,
+                        backgroundColor: Colors.deepPurple,
+                        child: Icon(Icons.person, size: 70, color: Colors.white),
                       ),
                     ),
-        ),
-      ),
-    ),
-  );
-}
-
-  Widget _buildErrorView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.error_outline, color: Colors.white, size: 60),
-          const SizedBox(height: 16),
-          Text('Failed to load profile', style: GoogleFonts.poppins(color: Colors.white, fontSize: 16)),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _fetchUserProfile,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.white),
-            child: Text('Retry', style: GoogleFonts.poppins(color: Colors.deepPurple)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProfileContent(TextTheme textTheme) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          // Avatar
-          Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.deepPurple.withOpacity(0.4),
-                  blurRadius: 20,
-                  spreadRadius: 4,
-                ),
-              ],
-            ),
-            child: CircleAvatar(
-              radius: 60,
-              backgroundColor: Colors.white,
-              child: userData?['photo']?.toString().isNotEmpty ?? false
-                  ? ClipOval(
-                      child: Image.network(
-                        userData!['photo'],
-                        width: 120,
-                        height: 120,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const Icon(Icons.person, size: 70, color: Colors.deepPurple),
+                    const SizedBox(height: 20),
+                    Text(
+                      userData?['name'] ?? "User",
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple,
                       ),
-                    )
-                  : const Icon(Icons.person, size: 70, color: Colors.deepPurple),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Name
-          Text(
-            userData?['name']?.toString() ?? 'User',
-            style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-
-          const SizedBox(height: 6),
-          Text(
-            userData?['role']?.toString() ?? 'Role',
-            style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white70),
-          ),
-
-          const SizedBox(height: 30),
-
-          // Info Card
-          Card(
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            elevation: 6,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
-              child: Column(
-                children: [
-                  _buildInfoRow('Registration No', userData?['enrollmentId']?.toString() ?? 'N/A'),
-                  const Divider(thickness: 1, color: Colors.deepPurple),
-                  _buildInfoRow('Email', userData?['email']?.toString() ?? 'N/A'),
-                  const Divider(thickness: 1, color: Colors.deepPurple),
-                  _buildInfoRow('Contact', userData?['phone']?.toString() ?? 'N/A'),
-                ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      userData?['role'] ?? "Role",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        fontSize: 16,
+                        color: Colors.deepPurple.shade200,
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    Card(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      elevation: 5,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+                        child: Column(
+                          children: [
+                            _buildInfoRow("Registration No",
+                                userData?['enrollmentId'] ?? "N/A"),
+                            _buildDivider(),
+                            _buildInfoRow("Email", userData?['email'] ?? "N/A"),
+                            _buildDivider(),
+                            _buildInfoRow("Contact", userData?['phone'] ?? "N/A"),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 40),
+                    ElevatedButton.icon(
+                      onPressed: _isLoggingOut ? null : _logout,
+                      icon: _isLoggingOut
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.logout),
+                      label: Text(_isLoggingOut ? "Logging out..." : "Logout"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        elevation: 4,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-
-          const SizedBox(height: 40),
-
-          // Logout button
-          ElevatedButton.icon(
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
-            label: const Text('Logout'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              elevation: 5,
-              shadowColor: Colors.redAccent.withOpacity(0.5),
-            ),
-          ),
-        ],
       ),
     );
   }

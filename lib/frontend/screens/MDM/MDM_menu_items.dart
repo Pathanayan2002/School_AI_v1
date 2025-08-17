@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import '../services/stock_service.dart';
+import '../services/api_client.dart';
+import 'package:animate_do/animate_do.dart';
 
 class MenuItemsPage extends StatefulWidget {
   const MenuItemsPage({super.key});
@@ -10,11 +10,15 @@ class MenuItemsPage extends StatefulWidget {
 }
 
 class _MenuItemsPageState extends State<MenuItemsPage> {
-  List<dynamic> menuItems = [];
-  List<dynamic> allItems = []; // To store all items for assignment
-  final StockService _stockService = StockService();
-  bool _loading = true;
+  final ApiService _apiService = ApiService();
+  final TextEditingController _dishNameController = TextEditingController();
+  List<Map<String, dynamic>> _menus = [];
+  List<Map<String, dynamic>> _items = [];
+  List<String> _selectedItemIds = [];
+  bool _isLoading = false;
   String? _errorMessage;
+  bool _showAddMenuForm = false;
+  Map<String, dynamic>? _editingMenu;
 
   @override
   void initState() {
@@ -22,440 +26,451 @@ class _MenuItemsPageState extends State<MenuItemsPage> {
     _fetchData();
   }
 
- Future<void> _fetchData() async {
-  try {
+  Future<void> _fetchData() async {
     setState(() {
-      _loading = true;
+      _isLoading = true;
       _errorMessage = null;
     });
 
-    final menus = await _stockService.getAllMenus();
-    debugPrint('Fetched menus: $menus'); // Add this log
-    final items = await _stockService.getAllItems();
-    debugPrint('Fetched items: $items'); // Add this log
-
-    setState(() {
-      menuItems = menus;
-      allItems = items;
-      _loading = false;
-    });
-  } catch (e) {
-    setState(() {
-      _loading = false;
-      _errorMessage = 'Failed to load data: ${e.toString().replaceFirst('Exception: ', '')}';
-      if (_errorMessage!.contains('401')) {
-        _errorMessage = 'Session expired. Please log in again.';
-      }
-    });
-  }
-}
-
-  Future<void> _addMenu(String newMenuName) async {
     try {
-      final response = await _stockService.addMenu(newMenuName);
+      final menusResponse = await _apiService.getAllMenus();
+      final itemsResponse = await _apiService.getAllItems();
+      setState(() {
+        _menus = List<Map<String, dynamic>>.from(menusResponse['data'] ?? []);
+        _items = List<Map<String, dynamic>>.from(itemsResponse['data'] ?? []);
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _addMenu() async {
+    final dishName = _dishNameController.text.trim();
+    if (dishName.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter a dish name';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final response = await _apiService.addMenu(dishName: dishName);
       if (response['statusCode'] == 201) {
-        await _fetchData();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Menu added successfully')),
+          SnackBar(
+            content: Text(response['statusMessage'] ?? 'Menu added successfully'),
+            backgroundColor: Colors.green,
+          ),
         );
+        _dishNameController.clear();
+        setState(() {
+          _showAddMenuForm = false;
+        });
+        await _fetchData();
       } else {
-        _showError('Failed to add menu: ${response['statusMessage']}');
+        throw Exception(response['statusMessage'] ?? 'Failed to add menu');
       }
     } catch (e) {
-      _showError('Failed to add menu: $e');
+      setState(() {
+        _errorMessage = e.toString();
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  Future<void> _updateMenu(int id, String dishName) async {
+  Future<void> _updateMenu(String id, String dishName) async {
+    if (dishName.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter a dish name';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
-      final response = await _stockService.updateMenu(id, dishName);
+      final response = await _apiService.updateMenu(id: id, dishName: dishName);
       if (response['statusCode'] == 200) {
-        await _fetchData();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Menu updated successfully')),
+          SnackBar(
+            content: Text(response['statusMessage'] ?? 'Menu updated successfully'),
+            backgroundColor: Colors.green,
+          ),
         );
+        setState(() {
+          _editingMenu = null;
+          _dishNameController.clear();
+        });
+        await _fetchData();
       } else {
-        _showError('Failed to update menu: ${response['statusMessage']}');
+        throw Exception(response['statusMessage'] ?? 'Failed to update menu');
       }
     } catch (e) {
-      _showError('Failed to update menu: $e');
+      setState(() {
+        _errorMessage = e.toString();
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  Future<void> _deleteMenu(int id) async {
-    try {
-      final response = await _stockService.deleteMenuById(id);
-      if (response['statusCode'] == 200) {
-        await _fetchData();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Menu deleted successfully')),
-        );
-      } else {
-        _showError('Failed to delete menu: ${response['statusMessage']}');
-      }
-    } catch (e) {
-      _showError('Failed to delete menu: $e');
-    }
-  }
-
-  Future<void> _assignItemsToMenu(int menuId, List<int> itemIds) async {
-    try {
-      final response = await _stockService.assignItemsToMenu(menuId, itemIds);
-      
-      if (response['statusCode'] == 200) {
-        await _fetchData();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Items assigned to menu successfully')),
-        );
-      } else {
-        _showError('Failed to assign items: ${response['statusMessage']}');
-      }
-    } catch (e) {
-      _showError('Failed to assign items: $e');
-    }
-  }
-
-  void _showAddMenuDialog() {
-    showDialog(
+  Future<void> _deleteMenu(String id) async {
+    final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AddMenuDialog(onAdd: _addMenu),
-    );
-  }
-
-  void _showEditMenuDialog(Map<String, dynamic> menu) {
-    showDialog(
-      context: context,
-      builder: (context) => EditMenuDialog(
-        menu: menu,
-        onUpdate: (dishName) => _updateMenu(menu['id'], dishName),
+      builder: (_) => AlertDialog(
+        title: const Text('Delete Menu'),
+        content: const Text('Are you sure you want to delete this menu?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
+
+    if (confirm != true) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final response = await _apiService.deleteMenu(id);
+      if (response['statusCode'] == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response['statusMessage'] ?? 'Menu deleted successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        await _fetchData();
+      } else {
+        throw Exception(response['statusMessage'] ?? 'Failed to delete menu');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
-  void _showAssignItemsDialog(int menuId) {
-    showDialog(
+  Future<void> _assignItemsToMenu(String menuId) async {
+    if (_selectedItemIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select at least one item')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final response = await _apiService.assignItemsToMenu(menuId: menuId, itemIds: _selectedItemIds);
+      if (response['statusCode'] == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response['statusMessage'] ?? 'Items assigned successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        setState(() => _selectedItemIds = []);
+        await _fetchData();
+      } else {
+        throw Exception(response['statusMessage'] ?? 'Failed to assign items');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _openAssignItemsDialog(String menuId) async {
+    setState(() {
+      _selectedItemIds = [];
+      _errorMessage = null;
+    });
+
+    await showDialog(
       context: context,
-      builder: (context) => AssignItemsDialog(
-        allItems: allItems,
-        onAssign: (itemIds) => _assignItemsToMenu(menuId, itemIds),
+      builder: (_) => AlertDialog(
+        title: const Text('Assign Items to Menu'),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) => SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: _items.map((item) {
+                final itemId = item['id'].toString();
+                return CheckboxListTile(
+                  title: Text(item['itemName'] ?? 'Unknown Item'),
+                  value: _selectedItemIds.contains(itemId),
+                  onChanged: (value) {
+                    setDialogState(() {
+                      if (value == true) {
+                        _selectedItemIds.add(itemId);
+                      } else {
+                        _selectedItemIds.remove(itemId);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => _assignItemsToMenu(menuId),
+            child: const Text('Assign'),
+          ),
+        ],
       ),
     );
-  }
-
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
-  }
-
-  String _formatDateTime(String? dateTimeStr) {
-    if (dateTimeStr == null) return '';
-    try {
-      final dateTime = DateTime.parse(dateTimeStr).toUtc().add(const Duration(hours: 5, minutes: 30));
-      return DateFormat('dd MMM yyyy, hh:mm a').format(dateTime);
-    } catch (e) {
-      return 'Invalid date';
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Menu Items - ${DateFormat('dd MMM yyyy').format(DateTime.now())}'),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 1,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
+        title: const Text(
+          'MDM Menu Items',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
+        backgroundColor: Theme.of(context).primaryColor,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchData,
-            tooltip: 'Refresh',
+            icon: Icon(_showAddMenuForm ? Icons.close : Icons.add),
+            onPressed: () {
+              setState(() {
+                _showAddMenuForm = !_showAddMenuForm;
+                _editingMenu = null;
+                _dishNameController.clear();
+                _errorMessage = null;
+              });
+            },
+            tooltip: _showAddMenuForm ? 'Close Form' : 'Add Menu',
           ),
-         
         ],
       ),
-      body: Column(
-        children: [
-          const SizedBox(height: 10),
-          ElevatedButton(
-            onPressed: _showAddMenuDialog,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            ),
-            child: const Text("New Menu"),
-          ),
-          const SizedBox(height: 10),
-          if (_errorMessage != null)
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                children: [
-                  Text(
-                    _errorMessage!,
-                    style: const TextStyle(color: Colors.red),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _fetchData,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_showAddMenuForm)
+                        FadeIn(
+                          duration: const Duration(milliseconds: 300),
+                          child: Card(
+                            elevation: 6,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _editingMenu == null ? 'Add New Menu' : 'Edit Menu',
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    controller: _dishNameController,
+                                    decoration: InputDecoration(
+                                      labelText: 'Dish Name',
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      filled: true,
+                                      fillColor: Colors.grey[100],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton(
+                                    onPressed: _isLoading
+                                        ? null
+                                        : () => _editingMenu == null
+                                            ? _addMenu()
+                                            : _updateMenu(_editingMenu!['id'].toString(), _dishNameController.text.trim()),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                    child: Text(_editingMenu == null ? 'Add Menu' : 'Update Menu'),
+                                  ),
+                                  if (_errorMessage != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: Text(
+                                        _errorMessage!,
+                                        style: const TextStyle(color: Colors.red),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                      FadeIn(
+                        duration: const Duration(milliseconds: 400),
+                        child: const Text(
+                          'Menus',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _menus.isEmpty
+                          ? const Center(child: Text('No menus available'))
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _menus.length,
+                              itemBuilder: (context, index) {
+                                final menu = _menus[index];
+                                final items = (menu['Items'] as List<dynamic>?) ?? [];
+                                return FadeInUp(
+                                  duration: Duration(milliseconds: 300 + index * 100),
+                                  child: Card(
+                                    elevation: 4,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: ExpansionTile(
+                                      title: Text(
+                                        menu['dishName'] ?? 'Unknown Menu',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        'Items: ${items.length}',
+                                        style: TextStyle(color: Colors.grey[600]),
+                                      ),
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.all(16.0),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              if (items.isEmpty)
+                                                const Text('No items assigned')
+                                              else
+                                                ...items.map((item) => ListTile(
+                                                      title: Text(
+                                                        item['itemName'] ?? 'Unknown Item',
+                                                        style: TextStyle(color: Colors.grey[800]),
+                                                      ),
+                                                      subtitle: Text(
+                                                        'Qty 1-5: ${item['quantity1_5']}, Qty 6-8: ${item['quantity6_8']}',
+                                                        style: TextStyle(color: Colors.grey[600]),
+                                                      ),
+                                                    )),
+                                              const SizedBox(height: 8),
+                                              Row(
+                                                mainAxisAlignment: MainAxisAlignment.end,
+                                                children: [
+                                                  IconButton(
+                                                    icon: const Icon(Icons.edit, color: Colors.blueAccent),
+                                                    onPressed: () {
+                                                      setState(() {
+                                                        _editingMenu = menu;
+                                                        _dishNameController.text = menu['dishName'] ?? '';
+                                                        _showAddMenuForm = true;
+                                                        _errorMessage = null;
+                                                      });
+                                                    },
+                                                    tooltip: 'Edit Menu',
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                                    onPressed: () => _deleteMenu(menu['id'].toString()),
+                                                    tooltip: 'Delete Menu',
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(Icons.add_circle, color: Colors.green),
+                                                    onPressed: () => _openAssignItemsDialog(menu['id'].toString()),
+                                                    tooltip: 'Assign Items',
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ],
                   ),
-                  ElevatedButton(
-                    onPressed: _fetchData,
-                    child: const Text('Retry'),
-                  ),
-                ],
+                ),
               ),
             ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : menuItems.isEmpty
-                    ? const Center(child: Text('No menu items found.'))
-                    : SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: DataTable(
-  columns: const [
-    DataColumn(label: Text("Menu ID")),
-    DataColumn(label: Text("Dish Name")),
-    DataColumn(label: Text("School ID")),
-    DataColumn(label: Text("Items")),
-    DataColumn(label: Text("Created At")),
-    DataColumn(label: Text("Updated At")),
-    DataColumn(label: Text("Actions")),
-  ],
-  rows: menuItems.map((item) {
-    final itemNames = (item['Items'] as List?)
-        ?.map((i) => i['itemName']?.toString() ?? '')
-        .join(', ') ??
-        'None';
-    return DataRow(cells: [
-      DataCell(Text(item['id']?.toString() ?? '')),
-      DataCell(Text(item['dishName']?.toString() ?? '')),
-      DataCell(Text(item['schoolId']?.toString() ?? '')),
-      DataCell(Text(itemNames)),
-      DataCell(Text(_formatDateTime(item['createdAt']))),
-      DataCell(Text(_formatDateTime(item['updatedAt']))),
-      DataCell(Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.edit, color: Colors.blue),
-            onPressed: () => _showEditMenuDialog(item),
-            tooltip: 'Edit',
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete, color: Colors.red),
-            onPressed: () => _deleteMenu(item['id']),
-            tooltip: 'Delete',
-          ),
-          IconButton(
-            icon: const Icon(Icons.link, color: Colors.green),
-            onPressed: () => _showAssignItemsDialog(item['id']),
-            tooltip: 'Assign Items',
-          ),
-        ],
-      )),
-    ]);
-  }).toList(),
-),
-                      ),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          setState(() {
+            _showAddMenuForm = !_showAddMenuForm;
+            _editingMenu = null;
+            _dishNameController.clear();
+            _errorMessage = null;
+          });
+        },
+        backgroundColor: Theme.of(context).primaryColor,
+        tooltip: _showAddMenuForm ? 'Close Form' : 'Add Menu',
+        child: Icon(_showAddMenuForm ? Icons.close : Icons.add),
       ),
     );
   }
-}
-
-class AddMenuDialog extends StatefulWidget {
-  final Function(String) onAdd;
-
-  const AddMenuDialog({super.key, required this.onAdd});
 
   @override
-  State<AddMenuDialog> createState() => _AddMenuDialogState();
-}
-
-class _AddMenuDialogState extends State<AddMenuDialog> {
-  final TextEditingController _menuNameController = TextEditingController();
-  bool _isSubmitting = false;
-
-  void _submit() {
-    final name = _menuNameController.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a menu name')),
-      );
-      return;
-    }
-    setState(() => _isSubmitting = true);
-    widget.onAdd(name);
-    setState(() => _isSubmitting = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text("Add Menu"),
-      content: TextField(
-        controller: _menuNameController,
-        decoration: const InputDecoration(
-          labelText: "Menu Name",
-          border: OutlineInputBorder(),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
-        ),
-        ElevatedButton(
-          onPressed: _isSubmitting ? null : _submit,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red.shade700,
-            foregroundColor: Colors.white,
-          ),
-          child: _isSubmitting
-              ? const CircularProgressIndicator(color: Colors.white)
-              : const Text("Add"),
-        ),
-      ],
-    );
-  }
-}
-
-class EditMenuDialog extends StatefulWidget {
-  final Map<String, dynamic> menu;
-  final Function(String) onUpdate;
-
-  const EditMenuDialog({super.key, required this.menu, required this.onUpdate});
-
-  @override
-  State<EditMenuDialog> createState() => _EditMenuDialogState();
-}
-
-class _EditMenuDialogState extends State<EditMenuDialog> {
-  final TextEditingController _menuNameController = TextEditingController();
-  bool _isSubmitting = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _menuNameController.text = widget.menu['dishName']?.toString() ?? '';
-  }
-
-  void _submit() {
-    final name = _menuNameController.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a menu name')),
-      );
-      return;
-    }
-    setState(() => _isSubmitting = true);
-    widget.onUpdate(name);
-    setState(() => _isSubmitting = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text("Edit Menu"),
-      content: TextField(
-        controller: _menuNameController,
-        decoration: const InputDecoration(
-          labelText: "Menu Name",
-          border: OutlineInputBorder(),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
-        ),
-        ElevatedButton(
-          onPressed: _isSubmitting ? null : _submit,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red.shade700,
-            foregroundColor: Colors.white,
-          ),
-          child: _isSubmitting
-              ? const CircularProgressIndicator(color: Colors.white)
-              : const Text("Update"),
-        ),
-      ],
-    );
-  }
-}
-
-class AssignItemsDialog extends StatefulWidget {
-  final List<dynamic> allItems;
-  final Function(List<int>) onAssign;
-
-  const AssignItemsDialog({super.key, required this.allItems, required this.onAssign});
-
-  @override
-  State<AssignItemsDialog> createState() => _AssignItemsDialogState();
-}
-
-class _AssignItemsDialogState extends State<AssignItemsDialog> {
-  final Set<int> _selectedItemIds = {};
-  bool _isSubmitting = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text("Assign Items to Menu"),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: widget.allItems.map((item) {
-            final itemId = item['id'] as int;
-            return CheckboxListTile(
-              title: Text(item['itemName']?.toString() ?? ''),
-              value: _selectedItemIds.contains(itemId),
-              onChanged: (bool? selected) {
-                setState(() {
-                  if (selected == true) {
-                    _selectedItemIds.add(itemId);
-                  } else {
-                    _selectedItemIds.remove(itemId);
-                  }
-                });
-              },
-            );
-          }).toList(),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text("Cancel"),
-        ),
-        ElevatedButton(
-          onPressed: _isSubmitting
-              ? null
-              : () {
-                  if (_selectedItemIds.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Please select at least one item')),
-                    );
-                    return;
-                  }
-                  setState(() => _isSubmitting = true);
-                  widget.onAssign(_selectedItemIds.toList());
-                  setState(() => _isSubmitting = false);
-                },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red.shade700,
-            foregroundColor: Colors.white,
-          ),
-          child: _isSubmitting
-              ? const CircularProgressIndicator(color: Colors.white)
-              : const Text("Assign"),
-        ),
-      ],
-    );
+  void dispose() {
+    _dishNameController.dispose();
+    super.dispose();
   }
 }

@@ -1,5 +1,5 @@
+// File: teacher_presenty.dart
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../services/api_client.dart';
@@ -177,136 +177,96 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
         decoration: InputDecoration(
           labelText: label,
           hintText: hintText,
-          border: const OutlineInputBorder(),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           filled: true,
-          fillColor: Colors.white,
-          labelStyle: GoogleFonts.poppins(),
-          hintStyle: GoogleFonts.poppins(color: Colors.grey),
+          fillColor: Colors.blue.shade50,
+          prefixIcon: const Icon(Icons.edit, color: Colors.blue),
         ),
-        style: GoogleFonts.poppins(),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: ThemeData(
-        primarySwatch: Colors.deepPurple,
-        textTheme: GoogleFonts.poppinsTextTheme(),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Teacher Attendance', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.blue.shade700,
+        elevation: 0,
       ),
-      child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF4A00E0), Color(0xFF8E2DE2)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.event_available, color: Colors.white, size: 40),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Teacher Attendance',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Card(
+          elevation: 4,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedMonth,
+                  decoration: InputDecoration(
+                    labelText: 'Select Month',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    filled: true,
+                    fillColor: Colors.blue.shade50,
+                    prefixIcon: const Icon(Icons.calendar_month, color: Colors.blue),
+                  ),
+                  items: monthList
+                      .map((month) => DropdownMenuItem<String>(
+                            value: month,
+                            child: Text(month),
+                          ))
+                      .toList(),
+                  onChanged: isSubmitting ? null : (val) => setState(() => selectedMonth = val!),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedTeacherId,
+                  decoration: InputDecoration(
+                    labelText: 'Select Teacher',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    filled: true,
+                    fillColor: Colors.blue.shade50,
+                    prefixIcon: const Icon(Icons.person, color: Colors.blue),
+                  ),
+                  items: teachers.isEmpty
+                      ? [
+                          DropdownMenuItem<String>(
+                            value: '',
+                            child: Text('No teachers available', style: const TextStyle(color: Colors.grey)),
+                          )
+                        ]
+                      : teachers.map((teacher) {
+                          return DropdownMenuItem<String>(
+                            value: teacher.id,
+                            child: Text('${teacher.name} (${teacher.enrollmentId})'),
+                          );
+                        }).toList(),
+                  onChanged: teachers.isEmpty || isSubmitting
+                      ? null
+                      : (val) => setState(() => selectedTeacherId = val),
+                ),
+                const SizedBox(height: 16),
+                _buildTextField('Total Days', _totalDaysController, hintText: 'Enter total working days'),
+                _buildTextField('Present Days', _presentDaysController, hintText: 'Enter days present'),
+                const SizedBox(height: 20),
+                isLoading || isSubmitting
+                    ? const Center(child: CircularProgressIndicator(color: Colors.blue))
+                    : ElevatedButton(
+                        onPressed: teachers.isEmpty ? null : submitAttendance,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue.shade700,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        child: const Text(
+                          'Submit Attendance',
+                          style: TextStyle(fontSize: 16),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Card(
-                    elevation: 5,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          DropdownButtonFormField<String>(
-                            value: selectedMonth,
-                            decoration: InputDecoration(
-                              labelText: 'Select Month',
-                              border: const OutlineInputBorder(),
-                              filled: true,
-                              fillColor: Colors.white,
-                              labelStyle: GoogleFonts.poppins(),
-                            ),
-                            items: monthList
-                                .map((month) => DropdownMenuItem<String>(
-                                      value: month,
-                                      child: Text(month, style: GoogleFonts.poppins()),
-                                    ))
-                                .toList(),
-                            onChanged: isSubmitting ? null : (val) => setState(() => selectedMonth = val!),
-                          ),
-                          const SizedBox(height: 16),
-                          DropdownButtonFormField<String>(
-                            value: selectedTeacherId,
-                            decoration: InputDecoration(
-                              labelText: 'Select Teacher',
-                              border: const OutlineInputBorder(),
-                              filled: true,
-                              fillColor: Colors.white,
-                              labelStyle: GoogleFonts.poppins(),
-                            ),
-                            items: teachers.isEmpty
-                                ? [
-                                    DropdownMenuItem<String>(
-                                      value: '',
-                                      child: Text('No teachers available', style: GoogleFonts.poppins(color: Colors.grey)),
-                                    )
-                                  ]
-                                : teachers.map((teacher) {
-                                    return DropdownMenuItem<String>(
-                                      value: teacher.id,
-                                      child: Text('${teacher.name} (${teacher.enrollmentId})',
-                                          style: GoogleFonts.poppins()),
-                                    );
-                                  }).toList(),
-                            onChanged: teachers.isEmpty || isSubmitting
-                                ? null
-                                : (val) => setState(() => selectedTeacherId = val),
-                          ),
-                          const SizedBox(height: 16),
-                          _buildTextField('Total Days', _totalDaysController, hintText: 'Enter total working days'),
-                          _buildTextField('Present Days', _presentDaysController, hintText: 'Enter days present'),
-                          const SizedBox(height: 20),
-                          isLoading || isSubmitting
-                              ? const Center(child: CircularProgressIndicator(color: Colors.white))
-                              : ElevatedButton(
-                                  onPressed: teachers.isEmpty ? null : submitAttendance,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.white,
-                                    foregroundColor: const Color(0xFF4A00E0),
-                                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    elevation: 6,
-                                  ),
-                                  child: Text(
-                                    'Submit Attendance',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFF4A00E0),
-                                    ),
-                                  ),
-                                ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
           ),
         ),

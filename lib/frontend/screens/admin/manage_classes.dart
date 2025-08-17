@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../services/api_client.dart';
 import 'dart:async';
 
-class ManageClassesWithdivsion extends StatefulWidget {
-  const ManageClassesWithdivsion({super.key});
+class ManageClassesWithDivision extends StatefulWidget {
+  const ManageClassesWithDivision({super.key});
 
   @override
-  State<ManageClassesWithdivsion> createState() => _ManageClassesWithdivsionState();
+  State<ManageClassesWithDivision> createState() => _ManageClassesWithDivisionState();
 }
 
-class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
+class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
   late ApiService _apiService;
   List<Map<String, dynamic>> _classes = [];
   bool _isLoading = true;
@@ -32,12 +33,18 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'] ?? '❌ Failed to load classes')),
+          SnackBar(
+            content: Text(result['message'] ?? '❌ Failed to load classes'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error fetching classes: $e')),
+        SnackBar(
+          content: Text('Error fetching classes: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     } finally {
       setState(() => _isLoading = false);
@@ -51,18 +58,28 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Add Class', style: TextStyle(fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
+          title: Text(
+            'Add New Class',
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              color: Colors.indigo[900],
+            ),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 decoration: InputDecoration(
-                  labelText: 'Class Name (e.g. 5)',
+                  labelText: 'Class Name (e.g., 5)',
                   hintText: 'Enter class name',
-                  prefixIcon: Icon(Icons.class_),
+                  prefixIcon: const Icon(Icons.class_, color: Colors.indigo),
+                  filled: true,
+                  fillColor: Colors.grey[100],
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
                   ),
                 ),
                 keyboardType: TextInputType.text,
@@ -72,11 +89,14 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
               TextField(
                 controller: divisionController,
                 decoration: InputDecoration(
-                  labelText: 'divsion (comma-separated, e.g. A,B,C)',
-                  hintText: 'Enter divsion',
-                  prefixIcon: Icon(Icons.group),
+                  labelText: 'Divisions (e.g., A,B,C)',
+                  hintText: 'Enter divisions, comma-separated',
+                  prefixIcon: const Icon(Icons.group, color: Colors.indigo),
+                  filled: true,
+                  fillColor: Colors.grey[100],
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
                   ),
                 ),
                 keyboardType: TextInputType.text,
@@ -86,17 +106,23 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(color: Colors.grey[600]),
+              ),
             ),
             ElevatedButton.icon(
               onPressed: () async {
                 if (newClassName.trim().isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("⚠️ Please enter a valid class name.")),
+                    SnackBar(
+                      content: Text("⚠️ Please enter a valid class name"),
+                      backgroundColor: Colors.redAccent,
+                    ),
                   );
                   return;
                 }
-                final divsion = divisionController.text
+                final divisions = divisionController.text
                     .split(',')
                     .map((e) => e.trim())
                     .where((e) => e.isNotEmpty)
@@ -104,11 +130,15 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
                 try {
                   final result = await _apiService.createClass(
                     name: newClassName.trim(),
-                    divsion: divsion.isNotEmpty ? divsion : null, schoolId: '',
+               
+                    schoolId: '',
                   );
                   if (result['success'] == true) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(result['message'] ?? 'Class added successfully')),
+                      SnackBar(
+                        content: Text(result['message'] ?? 'Class added successfully'),
+                        backgroundColor: Colors.green,
+                      ),
                     );
                     await _fetchClasses();
                     Navigator.of(context).pop();
@@ -116,21 +146,31 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          result['message'] ?? 'Failed to add class. Please check your permissions or input.',
+                          result['message'] ?? 'Failed to add class',
                         ),
+                        backgroundColor: Colors.redAccent,
                       ),
                     );
                   }
                 } catch (e) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error adding class: $e')),
+                    SnackBar(
+                      content: Text('Error adding class: $e'),
+                      backgroundColor: Colors.redAccent,
+                    ),
                   );
                 }
               },
-              icon: Icon(Icons.add),
-              label: const Text('Add Class'),
+              icon: const Icon(Icons.add, color: Colors.white),
+              label: Text(
+                'Add Class',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A00E0),
+                backgroundColor: Colors.indigo[700],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -139,26 +179,36 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
     );
   }
 
-  void _showEditDialog(String classId, String currentName, List<dynamic>? currentdivsion) {
+  void _showEditDialog(String classId, String currentName, List<dynamic>? currentDivisions) {
     final TextEditingController nameController = TextEditingController(text: currentName);
     final TextEditingController divisionController = TextEditingController(
-      text: currentdivsion?.join(', ') ?? '',
+      text: currentDivisions?.join(', ') ?? '',
     );
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text("Edit Class"),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
+          title: Text(
+            'Edit Class',
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              color: Colors.indigo[900],
+            ),
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: nameController,
                 decoration: InputDecoration(
-                  labelText: "Class Name",
+                  labelText: 'Class Name',
+                  filled: true,
+                  fillColor: Colors.grey[100],
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
                   ),
                 ),
               ),
@@ -166,26 +216,38 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
               TextField(
                 controller: divisionController,
                 decoration: InputDecoration(
-                  labelText: "divsion (comma-separated, e.g. A,B,C)",
+                  labelText: 'Divisions (e.g., A,B,C)',
+                  filled: true,
+                  fillColor: Colors.grey[100],
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
                   ),
                 ),
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("Cancel")),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(color: Colors.grey[600]),
+              ),
+            ),
             ElevatedButton(
               onPressed: () async {
                 final updatedName = nameController.text.trim();
                 if (updatedName.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("⚠️ Class name cannot be empty.")),
+                    SnackBar(
+                      content: Text("⚠️ Class name cannot be empty"),
+                      backgroundColor: Colors.redAccent,
+                    ),
                   );
                   return;
                 }
-                final divsion = divisionController.text
+                final divisions = divisionController.text
                     .split(',')
                     .map((e) => e.trim())
                     .where((e) => e.isNotEmpty)
@@ -194,11 +256,14 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
                   final result = await _apiService.updateClass(
                     id: classId,
                     name: updatedName,
-                    division: divsion.isNotEmpty ? divsion : null,
+                    division: divisions.isNotEmpty ? divisions : null,
                   );
                   if (result['success'] == true) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(result['message'] ?? 'Class updated')),
+                      SnackBar(
+                        content: Text(result['message'] ?? 'Class updated'),
+                        backgroundColor: Colors.green,
+                      ),
                     );
                     await _fetchClasses();
                     Navigator.of(context).pop();
@@ -206,20 +271,30 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          result['message'] ?? 'Failed to update class. Please check your permissions or input.',
+                          result['message'] ?? 'Failed to update class',
                         ),
+                        backgroundColor: Colors.redAccent,
                       ),
                     );
                   }
                 } catch (e) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error updating class: $e')),
+                    SnackBar(
+                      content: Text('Error updating class: $e'),
+                      backgroundColor: Colors.redAccent,
+                    ),
                   );
                 }
               },
-              child: const Text("Save Changes"),
+              child: Text(
+                'Save Changes',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.indigo,
+                backgroundColor: Colors.indigo[700],
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
           ],
@@ -235,17 +310,26 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
       final result = await _apiService.deleteClass(classId);
       if (result['success'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'] ?? 'Class deleted')),
+          SnackBar(
+            content: Text(result['message'] ?? 'Class deleted'),
+            backgroundColor: Colors.green,
+          ),
         );
         await _fetchClasses();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'] ?? 'Failed to delete class')),
+          SnackBar(
+            content: Text(result['message'] ?? 'Failed to delete class'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error deleting class: $e')),
+        SnackBar(
+          content: Text('Error deleting class: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     }
   }
@@ -255,23 +339,45 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Confirm Delete"),
-        content: const Text("Are you sure you want to delete this class? This action cannot be undone."),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: Colors.white,
+        title: Text(
+          'Confirm Delete',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            color: Colors.indigo[900],
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to delete this class? This action cannot be undone.',
+          style: GoogleFonts.poppins(color: Colors.grey[800]),
+        ),
         actions: [
           TextButton(
             onPressed: () {
               completer.complete(false);
               Navigator.of(context).pop();
             },
-            child: const Text("Cancel"),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey[600]),
+            ),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             onPressed: () {
               completer.complete(true);
               Navigator.of(context).pop();
             },
-            child: const Text("Delete"),
+            child: Text(
+              'Delete',
+              style: GoogleFonts.poppins(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -281,11 +387,11 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
 
   Widget _buildClassTable() {
     return Card(
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: Colors.white.withOpacity(0.95),
+      elevation: 10,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      color: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -294,62 +400,117 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
               children: [
                 Text(
                   'Manage Classes',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.indigo[800]),
+                  style: GoogleFonts.poppins(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.indigo[900],
+                  ),
                 ),
                 ElevatedButton.icon(
                   onPressed: _showAddDialog,
-                  icon: Icon(Icons.add),
-                  label: Text("Add New Class"),
+                  icon: const Icon(Icons.add, color: Colors.white),
+                  label: Text(
+                    'Add New Class',
+                    style: GoogleFonts.poppins(color: Colors.white),
+                  ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A00E0),
+                    backgroundColor: Colors.indigo[700],
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             if (_isLoading)
-              Center(child: CircularProgressIndicator(color: Colors.indigo))
+              const Center(
+                child: CircularProgressIndicator(
+                  color: Colors.indigo,
+                  strokeWidth: 3,
+                ),
+              )
             else if (_classes.isEmpty)
               Center(
                 child: Text(
                   'No classes found. Tap "+" to add one.',
-                  style: TextStyle(color: Colors.grey[600]),
+                  style: GoogleFonts.poppins(
+                    color: Colors.grey[600],
+                    fontSize: 16,
+                  ),
                 ),
               )
             else
               Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
+                  border: Border.all(color: Colors.grey.shade200),
                 ),
                 child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(Colors.indigo.shade50),
-                  columns: const [
-                    DataColumn(label: Text('ID')),
-                    DataColumn(label: Text('Class Name')),
-                    DataColumn(label: Text('divsion')),
-                    DataColumn(label: Text('Actions')),
+                  headingRowColor: MaterialStateProperty.all(Colors.indigo[50]),
+                  dataRowHeight: 60,
+                  columns: [
+                    DataColumn(
+                      label: Text(
+                        'ID',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    DataColumn(
+                      label: Text(
+                        'Class Name',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    DataColumn(
+                      label: Text(
+                        'Divisions',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    DataColumn(
+                      label: Text(
+                        'Actions',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+                    ),
                   ],
                   rows: _classes.map((cls) {
                     final String? classId = cls['_id']?.toString() ?? cls['id']?.toString();
-                    final List<dynamic>? divsion = cls['division']; // Changed from divsion
+                    final List<dynamic>? divisions = cls['division'];
                     return DataRow(
                       cells: [
-                        DataCell(Text(classId ?? 'N/A')),
-                        DataCell(Text(cls['name'] ?? 'N/A')),
-                        DataCell(Text(divsion?.join(', ') ?? 'None')),
+                        DataCell(
+                          Text(
+                            classId ?? 'N/A',
+                            style: GoogleFonts.poppins(),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            cls['name'] ?? 'N/A',
+                            style: GoogleFonts.poppins(),
+                          ),
+                        ),
+                        DataCell(
+                          Text(
+                            divisions?.join(', ') ?? 'None',
+                            style: GoogleFonts.poppins(),
+                          ),
+                        ),
                         DataCell(
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: Icon(Icons.edit, color: Colors.indigo),
-                                tooltip: 'Edit / संपादित करा',
+                                icon: const Icon(Icons.edit, color: Colors.indigo),
+                                tooltip: 'Edit',
                                 onPressed: () => _showEditDialog(classId ?? '', cls['name'] ?? '', cls['division']),
                               ),
                               IconButton(
-                                icon: Icon(Icons.delete, color: Colors.red),
-                                tooltip: 'Delete / हटवा',
+                                icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                tooltip: 'Delete',
                                 onPressed: () => _deleteClass(classId ?? ''),
                               ),
                             ],
@@ -370,17 +531,23 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A00E0),
-        title: const Text('Manage Classes', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.indigo[700],
+        title: Text(
+          'Manage Classes',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         centerTitle: true,
-        elevation: 1,
+        elevation: 0,
       ),
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF4A00E0), Color(0xFF8E2DE2)],
+            colors: [Colors.indigo[700]!, Colors.indigo[200]!],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -393,16 +560,19 @@ class _ManageClassesWithdivsionState extends State<ManageClassesWithdivsion> {
               children: [
                 Text(
                   'Manage School Classes',
-                  style: TextStyle(
+                  style: GoogleFonts.poppins(
                     color: Colors.white,
-                    fontSize: 22,
+                    fontSize: 24,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'View, edit or delete school classes and their divsion.',
-                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                  'View, edit, or delete school classes and their divisions.',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white70,
+                    fontSize: 16,
+                  ),
                 ),
                 const SizedBox(height: 20),
                 _buildClassTable(),

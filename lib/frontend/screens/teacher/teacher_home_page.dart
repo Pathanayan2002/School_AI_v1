@@ -1,341 +1,257 @@
-import 'package:dio/dio.dart';
+import 'package:Ai_School_App/frontend/screens/auth/login.dart';
+import 'package:Ai_School_App/frontend/screens/teacher/attendence_recore.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../admin/admin_profile.dart';
 import '../services/api_client.dart';
-import '../../model/student_model.dart'; // Use Student from student_model.dart
-import '../../model/model.dart' hide Student; // Keep for User and ClassModel
 import 'assigned_subjects.dart';
-import 'view_student_record.dart';
-import './result/sem_one.dart';
-import './result/sem_two.dart';
+import 'result_report.dart';
 import 'student_attendence.dart';
+import 'view_student_record.dart';
 
 class TeacherHomePage extends StatefulWidget {
+  static const routeName = '/teacherHome';
   final String teacherId;
+
   const TeacherHomePage({super.key, required this.teacherId});
 
   @override
-  State<TeacherHomePage> createState() => _TeacherHomePageState();
+  _TeacherHomePageState createState() => _TeacherHomePageState();
 }
 
 class _TeacherHomePageState extends State<TeacherHomePage> {
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
   final ApiService _apiService = ApiService();
-  User? _teacher;
-  List<ClassModel> _classes = [];
-  List<Student> _students = [];
-  bool _isLoading = true;
-  String? _errorMessage;
+  String? teacherId;
+  bool isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchTeacherData();
-    _fetchStudents();
-  }
-
-  Future<void> _fetchTeacherData() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      final userResponse = await _apiService.getUserById(widget.teacherId);
-      final classesResponse = await _apiService.getClassesByTeacherId(widget.teacherId);
-
-      setState(() {
-        if (userResponse['success'] == true) {
-          _teacher = User.fromJson(userResponse['data'] as Map<String, dynamic>);
-        }
-        if (classesResponse['success'] == true && classesResponse['data'] is List) {
-          _classes = (classesResponse['data'] as List)
-              .map((e) => ClassModel.fromJson(e as Map<String, dynamic>))
-              .toList();
-        } else {
-          _classes = [];
-        }
-        _isLoading = false;
-      });
-    } on DioException catch (e) {
-      setState(() {
-        _errorMessage = e.response?.data['message'] ?? e.message ?? 'An error occurred';
-        _isLoading = false;
-        if (e.response?.statusCode == 401) {
-          Navigator.pushReplacementNamed(context, '/login');
-        }
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _fetchStudents() async {
-    try {
-      final response = await _apiService.getAllStudents();
-      if (response['success'] == true && response['data'] is List) {
-        setState(() {
-          _students = (response['data'] as List)
-              .map((e) => Student.fromJson(e as Map<String, dynamic>))
-              .toList();
-        });
-      }
-    } catch (e) {
-      _showSnackBar('Failed to load students: $e');
-    }
+    teacherId = widget.teacherId;
   }
 
   Future<void> _logout() async {
-    try {
-      final response = await _apiService.logout();
-      if (response['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Logged out successfully', style: GoogleFonts.poppins()),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        Navigator.pushReplacementNamed(context, '/login');
-      } else {
-        _showSnackBar(response['message'] ?? 'Logout failed');
-      }
-    } on DioException catch (e) {
-      _showSnackBar(e.response?.data['message'] ?? e.message ?? 'An error occurred');
-      if (e.response?.statusCode == 401) {
-        Navigator.pushReplacementNamed(context, '/login');
-      }
-    } catch (e) {
-      _showSnackBar(e.toString());
-    }
-  }
-
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: GoogleFonts.poppins()),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  Future<void> _showStudentSelectionDialog(BuildContext context, String destination) async {
-    if (_students.isEmpty) {
-      _showSnackBar('No students available. Please try again later.');
-      return;
-    }
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Select Student', style: GoogleFonts.poppins()),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: _students.length,
-            itemBuilder: (context, index) {
-              final student = _students[index];
-              return ListTile(
-                title: Text(student.name, style: GoogleFonts.poppins()),
-                onTap: () {
-                  Navigator.pop(context);
-                  if (destination == 'sem1') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => Sem1ResultPage(student: student),
-                      ),
-                    );
-                  } else if (destination == 'sem2') {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => Sem2ResultPage(student: student),
-                      ),
-                    );
-                  }
-                },
-              );
-            },
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Confirm Logout"),
+      content: const Text("Are you sure you want to log out?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            "Logout",
+            style: TextStyle(color: Colors.red),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.poppins()),
-          ),
-        ],
+      ],
+    ),
+  );
+
+  if (confirm != true) return;
+
+  setState(() {
+    isLoading = true;
+  });
+
+  try {
+    final result = await _apiService.logout();
+    debugPrint('Logout response: $result');
+
+    if (!mounted) return;
+
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message'] ?? "Logged out successfully"),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 0),
+        ),
+      );
+      await Future.delayed(const Duration(seconds: 0));
+      if (mounted) {
+        // Replace with LoginPage
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Logout failed: ${result['message'] ?? 'Unknown error'}"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 0),
+        ),
+      );
+    }
+  } catch (e) {
+    debugPrint('Logout error: $e');
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Logout failed: $e"),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 0),
+      ),
+    );
+  } finally {
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+}
+
+
+  Widget _buildNavigationCard(String title, IconData icon, VoidCallback onTap) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: ListTile(
+        leading: Icon(icon, color: Colors.blue.shade700, size: 30),
+        title: Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        trailing: const Icon(Icons.arrow_forward, color: Colors.blue),
+        onTap: isLoading || teacherId == null ? null : onTap,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: Theme.of(context).copyWith(
-        primaryColor: const Color(0xFF1E88E5),
-        scaffoldBackgroundColor: Colors.grey[100],
-        cardTheme: const CardThemeData(
-          elevation: 6,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Teacher Dashboard'),
+        centerTitle: true,
+        backgroundColor: Colors.blue.shade700,
+        foregroundColor: Colors.white,
       ),
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            _teacher != null ? 'Welcome, ${_teacher!.name}' : 'Teacher Dashboard',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-          ),
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Logout',
-              onPressed: _logout,
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(color: Colors.blue.shade700),
+              child: const Text(
+                'Menu',
+                style: TextStyle(color: Colors.white, fontSize: 24),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.book),
+              title: const Text('Assigned Subjects'),
+              onTap: isLoading || teacherId == null
+                  ? null
+                  : () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => TeacherDashboardPage(teacherId: teacherId!)),
+                      ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_available),
+              title: const Text('Student Attendance'),
+              onTap: isLoading || teacherId == null
+                  ? null
+                  : () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) =>  StudentAttendanceScreen(subjectId: '', schoolId: '',)),
+                      ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_available),
+              title: const Text('Student Attendance Record'),
+              onTap: isLoading || teacherId == null
+                  ? null
+                  : () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const 
+                        StudentAttendanceRecordScreen(subjectId: '', schoolId: '',)),
+                      ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: const Text('My Profile'),
+              onTap: isLoading || teacherId == null
+                  ? null
+                  : () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ProfilePage()),
+                      ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description),
+              title: const Text('Result Report'),
+              onTap: isLoading || teacherId == null
+                  ? null
+                  : () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ResultReportScreen()),
+                      ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.list),
+              title: const Text('View Student Records'),
+              onTap: isLoading || teacherId == null
+                  ? null
+                  : () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const StudentRecordScreen()),
+                      ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onTap: isLoading || teacherId == null ? null : _logout,
             ),
           ],
         ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? Center(child: Text(_errorMessage!, style: GoogleFonts.poppins(color: Colors.red)))
-                : RefreshIndicator(
-                    onRefresh: _fetchTeacherData,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Assigned Classes',
-                              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 12,
-                            runSpacing: 12,
-                            children: _classes
-                                .map((cls) => SizedBox(
-                                      width: 150,
-                                      height: 100,
-                                      child: Card(
-                                        shape: const RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.all(Radius.circular(12))),
-                                        child: Center(
-                                          child: Text(
-                                            cls.name,
-                                            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ),
-                                      ),
-                                    ))
-                                .toList(),
-                          ),
-                          const SizedBox(height: 24),
-                          Text('Actions',
-                              style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 12),
-                          Expanded(
-                            child: GridView.count(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                              childAspectRatio: 1.5,
-                              children: [
-                                _buildNavCard(
-                                  context,
-                                  'Assigned Subjects',
-                                  Icons.book,
-                                  () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          AssignedSubjectsPage(teacherId: widget.teacherId),
-                                    ),
-                                  ),
-                                ),
-                                _buildNavCard(
-                                  context,
-                                  'Student Attendance',
-                                  Icons.event_available,
-                                  () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => StudentAttendanceScreen(),
-                                    ),
-                                  ),
-                                ),
-                                _buildNavCard(
-                                  context,
-                                  'Semester 1 Results',
-                                  Icons.assessment,
-                                  () => _showStudentSelectionDialog(context, 'sem1'),
-                                ),
-                                _buildNavCard(
-                                  context,
-                                  'Semester 2 Results',
-                                  Icons.assessment_outlined,
-                                  () => _showStudentSelectionDialog(context, 'sem2'),
-                                ),
-                                // Commenting out ResultReportPage until defined
-                                /*
-                                _buildNavCard(
-                                  context,
-                                  'Result Report',
-                                  Icons.report,
-                                  () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          ResultReportPage(teacherId: widget.teacherId),
-                                    ),
-                                  ),
-                                ),
-                                */
-                                _buildNavCard(
-                                  context,
-                                  'Final Results',
-                                  Icons.grade,
-                                  () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          ViewStudentRecordPage(teacherId: widget.teacherId),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
       ),
-    );
-  }
-
-  Widget _buildNavCard(BuildContext context, String title, IconData icon, VoidCallback onTap) {
-    return Card(
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: const BorderRadius.all(Radius.circular(12)),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 48, color: Theme.of(context).primaryColor),
-            const SizedBox(height: 12),
             Text(
-              title,
-              style: GoogleFonts.poppins(
-                  fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+              'Quick Actions',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.blue.shade700),
+            ),
+            const SizedBox(height: 16),
+            _buildNavigationCard(
+              'Student Attendance',
+              Icons.event_available,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const StudentAttendanceScreen(subjectId: '', schoolId: '',)),
+              ),
+            ),
+            _buildNavigationCard(
+              'Student Report',
+              Icons.list,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => StudentRecordScreen()),
+              ),
+            ),
+            _buildNavigationCard(
+              'Assign Marks',
+              Icons.book,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => TeacherDashboardPage(teacherId: teacherId!)),
+              ),
             ),
           ],
         ),

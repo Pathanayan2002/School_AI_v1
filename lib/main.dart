@@ -45,7 +45,7 @@ class MyApp extends StatelessWidget {
           }
           return ClerkHomePage(clerkId: clerkId,);
         },
-        '/mdm': (context) => const TeacherDashboardWireframe(),
+        '/mdm': (context) => const MDMHomePage(),
       },
       onUnknownRoute: (settings) {
         return MaterialPageRoute(builder: (context) => const LoginPage());

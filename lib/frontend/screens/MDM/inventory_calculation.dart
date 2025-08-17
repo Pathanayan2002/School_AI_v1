@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../services/api_client.dart';
 
 class InventoryCalculationDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onSubmit;
@@ -18,24 +20,27 @@ class InventoryCalculationDialog extends StatefulWidget {
 
 class _InventoryCalculationDialogState extends State<InventoryCalculationDialog> {
   final _formKey = GlobalKey<FormState>();
+  final _apiService = ApiService();
   DateTime? date;
   int? totalStudents;
   String? classGroup;
   String? menuId;
+  String? className;
   List<Map<String, dynamic>> itemsUsed = [];
 
   void _calculateRequiredQuantities(Map<String, dynamic> selectedMenu) {
     final selectedClassGroup = classGroup;
     if (selectedClassGroup == null || totalStudents == null) return;
 
-    final items = selectedMenu['Items'] as List<dynamic>;
+    final items = selectedMenu['Items'] as List<dynamic>? ?? [];
     itemsUsed = items.map<Map<String, dynamic>>((item) {
       final quantityPerStudent = selectedClassGroup == '1-5'
           ? (item['quantity1_5'] ?? 0.0)
           : (item['quantity6_8'] ?? 0.0);
       return {
         'itemId': item['id'],
-        'quantityUsed': quantityPerStudent * totalStudents!,
+        'itemName': item['itemName'],
+        'requiredQuantity': quantityPerStudent * totalStudents!,
       };
     }).toList();
   }
@@ -52,7 +57,7 @@ class _InventoryCalculationDialogState extends State<InventoryCalculationDialog>
             children: [
               ListTile(
                 title: Text(
-                  date == null ? 'Select Date' : 'Date: ${date!.toString().split(' ')[0]}',
+                  date == null ? 'Select Date' : 'Date: ${DateFormat('dd-MM-yyyy').format(date!)}',
                 ),
                 onTap: () async {
                   final selectedDate = await showDatePicker(
@@ -67,10 +72,25 @@ class _InventoryCalculationDialogState extends State<InventoryCalculationDialog>
                 },
               ),
               TextFormField(
+                decoration: const InputDecoration(labelText: 'Class Number (1-8)'),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a class number';
+                  }
+                  final classNumber = int.tryParse(value.trim());
+                  if (classNumber == null || classNumber < 1 || classNumber > 8) {
+                    return 'Class number must be between 1 and 8';
+                  }
+                  return null;
+                },
+                onSaved: (value) => className = value!.trim(),
+              ),
+              TextFormField(
                 decoration: const InputDecoration(labelText: 'Total Students'),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value == null || int.tryParse(value) == null) {
+                  if (value == null || int.tryParse(value) == null || int.parse(value) <= 0) {
                     return 'Please enter a valid number of students';
                   }
                   return null;
@@ -114,24 +134,86 @@ class _InventoryCalculationDialogState extends State<InventoryCalculationDialog>
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () {
+          onPressed: () async {
             if (_formKey.currentState?.validate() ?? false) {
               _formKey.currentState?.save();
-              if (date == null || itemsUsed.isEmpty) {
+              if (date == null || itemsUsed.isEmpty || className == null) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please select date and menu to calculate.')),
+                  const SnackBar(content: Text('Please fill all fields and select a menu')),
                 );
                 return;
               }
-              widget.onSubmit({
-                'date': date!.toString().split(' ')[0],
-                'totalStudents': totalStudents!,
-                'classGroup': classGroup!,
-                'menuId': int.parse(menuId!),
-                'itemsUsed': itemsUsed,
-                'exportToExcel': true,
-              });
-              Navigator.pop(context);
+              final classNumber = int.parse(className!);
+              if ((classGroup == '1-5' && classNumber > 5) || (classGroup == '6-8' && classNumber < 6)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Class number must match selected class group')),
+                );
+                return;
+              }
+              try {
+                final stocksData = await _apiService.getAllStocks();
+                final stocks = stocksData['data'] as List<dynamic>? ?? [];
+                for (final item in itemsUsed) {
+                  final itemId = item['itemId'];
+                  final requiredQty = item['requiredQuantity'] as double;
+
+                  final matchingStock = stocks.firstWhere(
+                    (s) => s['ItemId'] == itemId && s['classGroup'] == classGroup,
+                    orElse: () => {},
+                  );
+
+                  if (matchingStock.isEmpty) {
+                    throw Exception('Stock not found for ${item['itemName']} in group $classGroup');
+                  }
+
+                  final updatedStock = {
+                    'previousStock': matchingStock['previousStock'] as double,
+                    'inwardMaterial': matchingStock['inwardMaterial'] as double,
+                    'outwardMaterial': (matchingStock['outwardMaterial'] as double) + requiredQty,
+                    'totalStock': matchingStock['previousStock'] +
+                        matchingStock['inwardMaterial'] -
+                        ((matchingStock['outwardMaterial'] as double) + requiredQty),
+                    'classGroup': matchingStock['classGroup'],
+                  };
+
+                  await _apiService.updateStock(
+                    id: matchingStock['id'].toString(),
+                    previousStock: updatedStock['previousStock'],
+                    inwardMaterial: updatedStock['inwardMaterial'],
+                    outwardMaterial: updatedStock['outwardMaterial'],
+                    totalStock: updatedStock['totalStock'],
+                    classGroup: updatedStock['classGroup'], updates: {},
+                  );
+                }
+
+                final response = await _apiService.createReport(
+                  date: DateFormat('dd-MM-yyyy').format(date!),
+                  menuId: menuId!,
+                  totalStudents: totalStudents!,
+                  className: className!,
+                );
+                if (response['statusCode'] == 201) {
+                  widget.onSubmit({
+                    'date': DateFormat('dd-MM-yyyy').format(date!),
+                    'totalStudents': totalStudents!,
+                    'className': className!,
+                    'menuId': int.parse(menuId!),
+                    'itemsUsed': itemsUsed,
+                  });
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Report created successfully')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to create report: ${response['statusMessage']}')),
+                  );
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error creating report: $e')),
+                );
+              }
             }
           },
           child: const Text('Submit'),

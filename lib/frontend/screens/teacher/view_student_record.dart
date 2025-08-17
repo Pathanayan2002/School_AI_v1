@@ -1,182 +1,149 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:excel/excel.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../services/api_client.dart';
-import '../../model/model.dart';
 
+class Student {
+  final String id;
+  final String name;
+  final String rollNo;
+  final String className;
 
-class ViewStudentRecordPage extends StatefulWidget {
-  final String? teacherId;
-  const ViewStudentRecordPage({super.key, this.teacherId});
+  Student({
+    required this.id,
+    required this.name,
+    required this.rollNo,
+    required this.className,
+  });
 
-  @override
-  State<ViewStudentRecordPage> createState() => _ViewStudentRecordPageState();
+  factory Student.fromJson(Map<String, dynamic> json) {
+    return Student(
+      id: json['id'].toString(),
+      name: json['name'] ?? '',
+      rollNo: json['rollNo'] ?? '',
+      className: json['className'] ?? '',
+    );
+  }
 }
 
-class _ViewStudentRecordPageState extends State<ViewStudentRecordPage> {
+class StudentRecordScreen extends StatefulWidget {
+  const StudentRecordScreen({Key? key}) : super(key: key);
+
+  @override
+  State<StudentRecordScreen> createState() => _StudentRecordScreenState();
+}
+
+class _StudentRecordScreenState extends State<StudentRecordScreen> {
   final ApiService _apiService = ApiService();
-  List<Student> _students = [];
-  List<ClassModel> _classes = [];
-  String? _selectedClassId;
-  bool _isLoading = true;
-  String? _errorMessage;
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
+
+  bool isLoading = false;
+  List<Student> students = [];
 
   @override
   void initState() {
     super.initState();
-    _fetchData();
+    _checkAuthorization();
+    loadStudents();
   }
 
-  Future<void> _fetchData() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-    try {
-      if (widget.teacherId != null) {
-        final userResponse = await _apiService.getUserById(widget.teacherId!);
-        if (userResponse['data'] == null) {
-          throw Exception(userResponse['message'] ?? 'Failed to load teacher data');
-        }
-        final user = User.fromJson(userResponse['data']);
-        if (user.role != 'Teacher') {
-          throw Exception('Access restricted to Teachers only');
-        }
-      }
-      final studentsResponse = await _apiService.getAllStudents();
-      final classesResponse = widget.teacherId != null
-          ? await _apiService.getClassesByTeacherId(widget.teacherId!)
-          : await _apiService.getAllClasses(schoolId: '');
-      if (studentsResponse['data'] != null && classesResponse['data'] != null) {
-        setState(() {
-          _students = (studentsResponse['data'] as List<dynamic>)
-              .map((e) => Student.fromJson(e))
-              .toList();
-          _classes = (classesResponse['data'] as List<dynamic>)
-              .map((e) => ClassModel.fromJson(e))
-              .toList();
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _errorMessage = studentsResponse['message'] ?? classesResponse['message'] ?? 'Failed to load data';
-          _isLoading = false;
-        });
-      }
-    } on DioException catch (e) {
-      setState(() {
-        _errorMessage = e.response?.data['message'] ?? e.message ?? 'An error occurred';
-        _isLoading = false;
-        if (e.response?.statusCode == 401) {
-          Navigator.pushReplacementNamed(context, '/login');
-        }
-      });
-    } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-        _isLoading = false;
-      });
+  Future<void> _checkAuthorization() async {
+    final userId = await _storage.read(key: 'user_id');
+    if (userId == null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User not logged in')),
+      );
+      Navigator.pushReplacementNamed(context, '/login');
     }
   }
 
+  Future<void> loadStudents() async {
+    setState(() => isLoading = true);
+
+    try {
+      final res = await _apiService.getAllStudents();
+      if (res['success'] && res['data'] is List) {
+        setState(() {
+          students = List<dynamic>.from(res['data'])
+              .map((item) => Student.fromJson(item))
+              .toList();
+          isLoading = false;
+        });
+      } else {
+        throw Exception(res['message'] ?? 'Failed to load students');
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading students: $e')),
+      );
+    }
+  }
+
+ Future<void> exportToExcel() async {
+  final excel = Excel.createExcel();
+  final sheet = excel['Students'];
+
+  // Header
+  sheet.appendRow([
+    TextCellValue('ID'),
+    TextCellValue('Name'),
+    TextCellValue('Roll No'),
+    TextCellValue('Class'),
+  ]);
+
+  // Data rows
+  for (var student in students) {
+    sheet.appendRow([
+      TextCellValue(student.id),
+      TextCellValue(student.name),
+      TextCellValue(student.rollNo),
+      TextCellValue(student.className),
+    ]);
+  }
+
+  final fileBytes = excel.encode();
+  if (fileBytes != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Excel file generated successfully')),
+    );
+  }
+}
+
+
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: Theme.of(context).copyWith(
-        primaryColor: const Color(0xFF1E88E5),
-        scaffoldBackgroundColor: Colors.grey[100],
-        cardTheme: const CardThemeData(
-          elevation: 6,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Student Records'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.download),
+            onPressed: students.isEmpty ? null : exportToExcel,
+          )
+        ],
       ),
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text('Student Records', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          backgroundColor: Colors.blue,
-          foregroundColor: Colors.white,
-        ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : _errorMessage != null
-                ? Center(child: Text(_errorMessage!, style: GoogleFonts.poppins(color: Colors.red)))
-                : Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        DropdownButton<String>(
-                          hint: Text('Select Class', style: GoogleFonts.poppins()),
-                          value: _selectedClassId,
-                          isExpanded: true,
-                          items: _classes
-                              .map((cls) => DropdownMenuItem(
-                                    value: cls.id,
-                                    child: Text(cls.name, style: GoogleFonts.poppins()),
-                                  ))
-                              .toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedClassId = value;
-                            });
-                          },
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : students.isEmpty
+              ? const Center(child: Text('No students found'))
+              : ListView.builder(
+                  itemCount: students.length,
+                  itemBuilder: (context, index) {
+                    final student = students[index];
+                    return Card(
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          child: Text(student.rollNo),
                         ),
-                        const SizedBox(height: 24),
-                        Expanded(
-                          child: _selectedClassId == null
-                              ? Center(child: Text('Select a class to view students', style: GoogleFonts.poppins()))
-                              : ListView.builder(
-                                  itemCount: _students.where((s) => s.classId == _selectedClassId).length,
-                                  itemBuilder: (context, index) {
-                                    final student = _students.where((s) => s.classId == _selectedClassId).elementAt(index);
-                                    return Card(
-                                      margin: const EdgeInsets.symmetric(vertical: 8),
-                                      child: ListTile(
-                                        title: Text(student.name, style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
-                                        subtitle: Text(
-                                          'Roll No: ${student.rollNo}\n'
-                                          'Parent\'s Phone: ${student.parentsPhno ?? 'N/A'}',
-                                          style: GoogleFonts.poppins(color: Colors.grey),
-                                        ),
-                                        trailing: IconButton(
-                                          icon: const Icon(Icons.assessment, color: Color(0xFF1E88E5)),
-                                          onPressed: () async {
-                                            if (widget.teacherId == null) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Teacher ID is required to view results', style: GoogleFonts.poppins())),
-                                              );
-                                              return;
-                                            }
-                                            try {
-                                              final resultResponse = await _apiService.getOverallResult(student.id);
-                                              if (resultResponse['data'] == null) {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(resultResponse['message'] ?? 'No results available', style: GoogleFonts.poppins())),
-                                                );
-                                                return;
-                                              }
-                                            
-                                            } on DioException catch (e) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Error: ${e.response?.data['message'] ?? e.message ?? 'An error occurred'}', style: GoogleFonts.poppins())),
-                                              );
-                                            } catch (e) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(content: Text('Error: $e', style: GoogleFonts.poppins())),
-                                              );
-                                            }
-                                          },
-                                          tooltip: 'View Results',
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
-                      ],
-                    ),
-                  ),
-      ),
+                        title: Text(student.name),
+                        subtitle: Text('Class: ${student.className}'),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }

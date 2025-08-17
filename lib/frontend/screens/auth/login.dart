@@ -39,7 +39,7 @@ class _LoginPageState extends State<LoginPage> {
       if (role != null && userId != null) {
         if (!mounted) return;
         // Verify role to prevent incorrect navigation
-        if (['Admin', 'SuperAdmin', 'Teacher', 'Clerk', 'MDM'].contains(role)) {
+        if (['Admin',  'Teacher', 'Clerk'].contains(role)) {
           _navigateToDashboard(role, userId);
         }
       }

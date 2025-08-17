@@ -1,14 +1,18 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:cookie_jar/cookie_jar.dart';
+import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:path_provider/path_provider.dart';
 
 class StockService {
-  static const String _baseUrl = 'http://localhost:8001/api/mdm';
+  static const String _baseUrl = 'http://devschool.aiztsinfotech.com:8001/api/mdm';
   static const Duration _timeout = Duration(seconds: 10);
   final Dio _dio;
   final FlutterSecureStorage _storage;
+  late final CookieJar cookieJar;
 
-  StockService()
+ StockService()
       : _dio = Dio(
           BaseOptions(
             baseUrl: _baseUrl,
@@ -22,10 +26,30 @@ class StockService {
             extra: {'withCredentials': true},
           ),
         ),
-        _storage = const FlutterSecureStorage();
+      _storage = const FlutterSecureStorage() {
+    _initializeCookieJar();
+  }
 
+Future<void> _initializeCookieJar() async {
+    if (kIsWeb) {
+      cookieJar = CookieJar();
+    } else {
+      final directory = await getApplicationDocumentsDirectory();
+      cookieJar = PersistCookieJar(
+        storage: FileStorage('${directory.path}/.cookies/'),
+      );
+    }
+    _dio.interceptors.add(CookieManager(cookieJar));
+  }
   Future<String?> _getAuthToken() async {
-    return await _storage.read(key: 'jwt_token');
+    try {
+      final token = await _storage.read(key: 'auth_token');
+      debugPrint('Retrieved JWT token: ${token != null ? 'Present' : 'Null'}');
+      return token;
+    } catch (e) {
+      debugPrint('Error reading JWT token: $e');
+      return null;
+    }
   }
 
   Future<Map<String, String>> _getHeaders() async {
@@ -40,6 +64,41 @@ class StockService {
       debugPrint('No JWT token found');
     }
     return headers;
+  }
+
+  Future<bool> _isAuthenticated() async {
+    final token = await _getAuthToken();
+    final isAuthenticated = token != null;
+    debugPrint('Authentication check: $isAuthenticated');
+    return isAuthenticated;
+  }
+
+  Future<Map<String, dynamic>> login(String username, String password) async {
+    try {
+      final response = await _dio.post(
+        '/login',
+        data: {
+          'username': username,
+          'password': password,
+        },
+        options: Options(headers: {
+          'Content-Type': 'application/json',
+          if (kIsWeb) 'Accept': '*/*',
+        }),
+      );
+      final result = await _handleResponse(response);
+      debugPrint('Login result: $result');
+      if (result['statusCode'] == 200 && result['data']['token'] != null) {
+        final token = result['data']['token'].toString();
+        await _storage.write(key: 'token', value: token);
+        debugPrint('JWT token stored successfully');
+        return result;
+      }
+      throw Exception('Login failed: ${result['statusMessage']}');
+    } catch (e) {
+      debugPrint('Error in login: $e');
+      throw Exception('Login error: $e');
+    }
   }
 
   dynamic _normalizeIds(dynamic data) {
@@ -62,112 +121,67 @@ class StockService {
   }
 
   Future<Map<String, dynamic>> _handleResponse(Response response) async {
-  final statusCode = response.statusCode;
-  final body = response.data;
+    final statusCode = response.statusCode;
+    final body = response.data;
 
-  debugPrint('Response status: $statusCode');
-  debugPrint('Response body: $body');
+    debugPrint('Response status: $statusCode');
+    debugPrint('Response body: $body');
 
-  final normalizedBody = _normalizeIds(body);
+    final normalizedBody = _normalizeIds(body);
 
-  String statusMessage;
-  if (statusCode != 200) {
-    statusMessage = 'Request failed with status $statusCode';
+    String statusMessage;
+    if (statusCode != 200 && statusCode != 201) {
+      statusMessage = 'Request failed with status $statusCode';
+      if (normalizedBody is Map<String, dynamic> && normalizedBody['message'] != null) {
+        statusMessage = normalizedBody['message'].toString();
+      }
+      return {
+        'statusCode': statusCode,
+        'data': null,
+        'statusMessage': statusMessage,
+      };
+    }
+
+    final responseData = normalizedBody is Map<String, dynamic> && normalizedBody['data'] != null
+        ? normalizedBody['data']
+        : normalizedBody;
+
     if (normalizedBody is Map<String, dynamic> && normalizedBody['message'] != null) {
       statusMessage = normalizedBody['message'].toString();
+    } else {
+      statusMessage = 'Success';
     }
+
     return {
       'statusCode': statusCode,
-      'data': null,
+      'data': responseData,
       'statusMessage': statusMessage,
     };
   }
 
-  // Extract the 'data' field if it exists, otherwise use the entire body
-  final responseData = normalizedBody is Map<String, dynamic> && normalizedBody['data'] != null
-      ? normalizedBody['data']
-      : normalizedBody;
-
-  if (normalizedBody is Map<String, dynamic> && normalizedBody['message'] != null) {
-    statusMessage = normalizedBody['message'].toString();
-  } else {
-    statusMessage = 'Success';
-  }
-
-  return {
-    'statusCode': statusCode,
-    'data': responseData,
-    'statusMessage': statusMessage,
-  };
-}
-
-Future<List<Map<String, dynamic>>> getAllClasses() async {
-  try {
-    final headers = await _getHeaders();
-    debugPrint('Headers for getAllClasses: $headers');
-    final response = await _dio.get(
-      '/class/All',
-      options: Options(headers: headers),
-    );
-    final result = await _handleResponse(response);
-    debugPrint('Processed result for getAllClasses: $result');
-    if (result['statusCode'] == 200) {
-      final classes = result['data'];
-      if (classes is List) {
-        return List<Map<String, dynamic>>.from(classes);
+  Future<List<Map<String, dynamic>>> getAllClasses() async {
+    try {
+      final headers = await _getHeaders();
+      debugPrint('Headers for getAllClasses: $headers');
+      final response = await _dio.get(
+        '/class/All',
+        options: Options(headers: headers),
+      );
+      final result = await _handleResponse(response);
+      debugPrint('Processed result for getAllClasses: $result');
+      if (result['statusCode'] == 200) {
+        final classes = result['data'];
+        if (classes is List) {
+          return List<Map<String, dynamic>>.from(classes);
+        }
+        throw Exception('Unexpected response format: classes is not a list');
       }
-      throw Exception('Unexpected response format: classes is not a list');
+      throw Exception('Failed to fetch classes: ${result['statusMessage']}');
+    } catch (e) {
+      debugPrint('Error in getAllClasses: $e');
+      rethrow;
     }
-    throw Exception('Failed to fetch classes: ${result['statusMessage']}');
-  } catch (e) {
-    debugPrint('Error in getAllClasses: $e');
-    rethrow;
   }
-}
-
-Future<Map<String, dynamic>> updateReport(int id, Map<String, dynamic> reportData) async {
-  try {
-    final headers = await _getHeaders();
-    debugPrint('Headers for updateReport: $headers');
-    final response = await _dio.put(
-      '/updateReport/$id',
-      data: reportData,
-      options: Options(headers: headers),
-    );
-    final result = await _handleResponse(response);
-    debugPrint('Processed result for updateReport: $result');
-    return result;
-  } catch (e) {
-    debugPrint('Error in updateReport: $e');
-    throw Exception('Error updating report: $e');
-  }
-}
-
-Future<List<Map<String, dynamic>>> getAllItems() async {
-  try {
-    final headers = await _getHeaders();
-    debugPrint('Headers for getAllItems: $headers');
-    final response = await _dio.get(
-      '/getAllItem',
-      options: Options(headers: headers),
-    );
-    final result = await _handleResponse(response);
-    debugPrint('Processed result for getAllItems: $result');
-    if (result['statusCode'] == 200) {
-      // Adjust for the nested structure: data.items
-      final items = result['data']['items']; // Access the nested 'items' list
-      if (items is List) {
-        return List<Map<String, dynamic>>.from(items);
-      }
-      throw Exception('Unexpected response format: items is not a list');
-    }
-    throw Exception('Failed to fetch items: ${result['statusMessage']}');
-  } catch (e) {
-    debugPrint('Error in getAllItems: $e');
-    rethrow;
-  }
-}
-
 
   Future<Map<String, dynamic>> addItem(String itemName, double quantity1_5, double quantity6_8) async {
     try {
@@ -182,19 +196,61 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error adding item: $e');
       throw Exception('Error adding item: $e');
     }
   }
 
-  Future<Map<String, dynamic>> updateItem(int id, Map<String, dynamic> updates) async {
+  Future<Map<String, dynamic>> createItem(String itemName, double previousStock, double inward, double outward, double d, String classGroup) async {
     try {
-      final response = await _dio.put(
-        '/updateItem/$id',
-        data: updates,
+      final response = await _dio.post(
+        '/addItem',
+        data: {
+          'itemName': itemName,
+          'quantity1_5': 0.0,
+          'quantity6_8': 0.0,
+        },
         options: Options(headers: await _getHeaders()),
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error creating item: $e');
+      throw Exception('Error creating item: $e');
+    }
+  }
+
+  Future<List<dynamic>> getAllItems() async {
+    try {
+      final headers = await _getHeaders();
+      final response = await _dio.get(
+        '/getAllItem',
+        options: Options(headers: headers),
+      );
+      final result = await _handleResponse(response);
+      if (result['statusCode'] == 200) {
+        return result['data'];
+      }
+      throw Exception('Failed to fetch items: ${result['statusMessage']}');
+    } catch (e) {
+      debugPrint('Error in getAllItems: $e');
+      rethrow;
+    }
+  }
+  
+  Future<Map<String, dynamic>> updateItem(int id, String itemName, double qty1, double qty6) async {
+    try {
+      final response = await _dio.put(
+        '/updateItem/$id',
+        data: {
+          'itemName': itemName,
+          'quantity1_5': qty1,
+          'quantity6_8': qty6,
+        },
+        options: Options(headers: await _getHeaders()),
+      );
+      return await _handleResponse(response);
+    } catch (e) {
+      debugPrint('Error updating item: $e');
       throw Exception('Error updating item: $e');
     }
   }
@@ -207,6 +263,7 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error deleting item: $e');
       throw Exception('Error deleting item: $e');
     }
   }
@@ -220,38 +277,34 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error adding menu: $e');
       throw Exception('Error adding menu: $e');
     }
   }
 
- Future<List<dynamic>> getAllMenus() async {
-  try {
-    final headers = await _getHeaders();
-    debugPrint('Headers for getAllMenus: $headers');
-    final response = await _dio.get(
-      '/getAllMenu',
-      options: Options(headers: headers),
-    );
-    final result = await _handleResponse(response);
-    debugPrint('Processed result for getAllMenus: $result');
-    if (result['statusCode'] == 200) {
-      final data = result['data'];
-      debugPrint('Extracted data: $data'); // Add this log
-      if (data == null || !data.containsKey('menus')) {
-        throw Exception('Response does not contain menus data');
+  Future<List<dynamic>> getAllMenus() async {
+    try {
+      final headers = await _getHeaders();
+      debugPrint('Headers for getAllMenus: $headers');
+      final response = await _dio.get(
+        '/getAllMenu',
+        options: Options(headers: headers),
+      );
+      final result = await _handleResponse(response);
+      debugPrint('Processed result for getAllMenus: $result');
+      if (result['statusCode'] == 200) {
+        final menus = result['data'];
+        if (menus is List) {
+          return menus;
+        }
+        throw Exception('Unexpected response format: menus is not a list');
       }
-      final menus = data['menus'];
-      if (menus is List) {
-        return menus;
-      }
-      throw Exception('Unexpected response format: menus is not a list');
+      throw Exception('Failed to fetch menus: ${result['statusMessage']}');
+    } catch (e) {
+      debugPrint('Error in getAllMenus: $e');
+      rethrow;
     }
-    throw Exception('Failed to fetch menus: ${result['statusMessage']}');
-  } catch (e) {
-    debugPrint('Error in getAllMenus: $e');
-    rethrow;
   }
-}
 
   Future<Map<String, dynamic>> updateMenu(int id, String dishName) async {
     try {
@@ -262,6 +315,7 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error updating menu: $e');
       throw Exception('Error updating menu: $e');
     }
   }
@@ -274,6 +328,7 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error deleting menu: $e');
       throw Exception('Error deleting menu: $e');
     }
   }
@@ -290,11 +345,12 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error assigning items to menu: $e');
       throw Exception('Error assigning items to menu: $e');
     }
   }
 
-  Future<Map<String, dynamic>> createItemStock(Map<String, dynamic> stockData) async {
+  Future<Map<String, dynamic>> createStock(Map<String, dynamic> stockData) async {
     try {
       final response = await _dio.post(
         '/createStock',
@@ -303,38 +359,34 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error creating stock: $e');
       throw Exception('Error creating stock: $e');
     }
   }
 
- Future<List<dynamic>> getAllStocks() async {
-  try {
-    final headers = await _getHeaders();
-    debugPrint('Headers for getAllStocks: $headers');
-    final response = await _dio.get(
-      '/getAllStocks',
-      options: Options(headers: headers),
-    );
-    final result = await _handleResponse(response);
-    debugPrint('Processed result for getAllStocks: $result');
-    if (result['statusCode'] == 200) {
-      final data = result['data'];
-      if (data == null) {
-        throw Exception('Response does not contain stocks data');
+  Future<List<dynamic>> getAllStocks() async {
+    try {
+      final headers = await _getHeaders();
+      debugPrint('Headers for getAllStocks: $headers');
+      final response = await _dio.get(
+        '/getAllStocks',
+        options: Options(headers: headers),
+      );
+      final result = await _handleResponse(response);
+      debugPrint('Processed result for getAllStocks: $result');
+      if (result['statusCode'] == 200) {
+        final stocks = result['data'];
+        if (stocks is List) {
+          return stocks;
+        }
+        throw Exception('Unexpected response format: stocks is not a list');
       }
-      // Handle both possible formats: list or {stocks: [...]}
-      final stocks = data is List ? data : (data.containsKey('stocks') ? data['stocks'] : null);
-      if (stocks is List) {
-        return stocks;
-      }
-      throw Exception('Unexpected response format: stocks is not a list');
+      throw Exception('Failed to fetch stocks: ${result['statusMessage']}');
+    } catch (e) {
+      debugPrint('Error in getAllStocks: $e');
+      rethrow;
     }
-    throw Exception('Failed to fetch stocks: ${result['statusMessage']}');
-  } catch (e) {
-    debugPrint('Error in getAllStocks: $e');
-    rethrow;
   }
-}
 
   Future<Map<String, dynamic>> updateStock(int id, Map<String, dynamic> updates) async {
     try {
@@ -345,6 +397,7 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error updating stock: $e');
       throw Exception('Error updating stock: $e');
     }
   }
@@ -357,6 +410,7 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error deleting stock: $e');
       throw Exception('Error deleting stock: $e');
     }
   }
@@ -370,6 +424,7 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error updating stock inward: $e');
       throw Exception('Error updating stock inward: $e');
     }
   }
@@ -383,82 +438,82 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error creating report: $e');
       throw Exception('Error creating report: $e');
     }
   }
 
- Future<List<dynamic>> getAllInventoryReports() async {
-  try {
-    final headers = await _getHeaders();
-    debugPrint('Headers for getAllInventoryReports: $headers');
-    final response = await _dio.get(
-      '/getAllReports',
-      options: Options(headers: headers),
-    );
-    final result = await _handleResponse(response);
-    debugPrint('Processed result for getAllInventoryReports: $result');
-    if (result['statusCode'] == 200) {
-      final data = result['data'];
-      if (data == null || !data.containsKey('reports')) {
-        throw Exception('Response does not contain reports data');
-      }
-      final reports = data['reports'];
-      if (reports is List) {
-        return reports;
-      }
-      throw Exception('Unexpected response format: reports is not a list');
-    }
-    throw Exception('Failed to fetch reports: ${result['statusMessage']}');
-  } catch (e) {
-    debugPrint('Error in getAllInventoryReports: $e');
-    rethrow;
-  }
-}
-
- Future<List<dynamic>> getDailyReports({String? date}) async {
-  try {
-    final headers = await _getHeaders();
-    debugPrint('Headers for getDailyReports: $headers');
-    final queryParameters = date != null ? {'date': date} : null;
-    final response = await _dio.get(
-      '/daily',
-      queryParameters: queryParameters,
-      options: Options(headers: headers),
-    );
-    final result = await _handleResponse(response);
-    debugPrint('Processed result for getDailyReports: $result');
-    if (result['statusCode'] == 200) {
-      // Access the nested 'reports' field
-      final reports = result['data']['data']['reports'];
-      if (reports is List) {
-        return reports;
-      } else {
+  Future<List<dynamic>> getAllInventoryReports() async {
+    try {
+      final headers = await _getHeaders();
+      debugPrint('Headers for getAllInventoryReports: $headers');
+      final response = await _dio.get(
+        '/getAllReports',
+        options: Options(headers: headers),
+      );
+      final result = await _handleResponse(response);
+      debugPrint('Processed result for getAllInventoryReports: $result');
+      if (result['statusCode'] == 200) {
+        final reports = result['data'];
+        if (reports is List) {
+          return reports;
+        }
         throw Exception('Unexpected response format: reports is not a list');
       }
+      throw Exception('Failed to fetch reports: ${result['statusMessage']}');
+    } catch (e) {
+      debugPrint('Error in getAllInventoryReports: $e');
+      rethrow;
     }
-    throw Exception('Failed to fetch daily reports: ${result['statusMessage']}');
-  } catch (e) {
-    debugPrint('Error in getDailyReports: $e');
-    rethrow;
   }
-} 
-  
-  Future<List<dynamic>> getMonthlyReports() async {
+
+  Future<dynamic> getDailyReports({required String date}) async {
     try {
-      final response = await _dio.get(
-        '/monthly',
-        options: Options(headers: await _getHeaders()),
+      final headers = await _getHeaders();
+      final response = await _dio.post(
+        '/daily',
+        data: {'date': date},
+        options: Options(headers: headers),
       );
       final result = await _handleResponse(response);
       if (result['statusCode'] == 200) {
-        return result['data']['reports'] ?? [];
+        return result['data'];
       }
-      throw Exception('Failed to fetch monthly reports: ${result['statusMessage']}');
+      return result;
     } catch (e) {
-      throw Exception('Error fetching monthly reports: $e');
+      debugPrint('Error in getDailyReports: $e');
+      rethrow;
     }
   }
-
+  
+  Future<dynamic> getMonthlyReports({required String month, required String year}) async {
+    try {
+      final headers = await _getHeaders();
+      final months = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      final monthIndex = months.indexOf(month);
+      if (monthIndex == -1) {
+        throw Exception('Invalid month name');
+      }
+      final formattedMonth = (monthIndex + 1).toString().padLeft(2, '0');
+      final response = await _dio.post(
+        '/monthly',
+        data: {'month': formattedMonth, 'year': year},
+        options: Options(headers: headers),
+      );
+      final result = await _handleResponse(response);
+      if (result['statusCode'] == 200) {
+        return result['data'];
+      }
+      return result;
+    } catch (e) {
+      debugPrint('Error in getMonthlyReports: $e');
+      rethrow;
+    }
+  }
+  
   Future<Map<String, dynamic>> carryForwardStock() async {
     try {
       final response = await _dio.put(
@@ -467,7 +522,73 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error carrying forward stock: $e');
       throw Exception('Error carrying forward stock: $e');
+    }
+  }
+
+  Future<String?> _getToken() async {
+    return await _storage.read(key: 'token');
+  }
+
+  Future<Map<String, dynamic>> getAllSubjects() async {
+    try {
+      final token = await _getToken();
+      final response = await _dio.get(
+        '/subject/All',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.data;
+    } catch (e) {
+      print('Error in getAllSubjects: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getClassesByTeacherId(String teacherId) async {
+    try {
+      final token = await _getToken();
+      final response = await _dio.get(
+        '/class/All',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.data;
+    } catch (e) {
+      print('Error in getClassesByTeacherId: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getAllStudents() async {
+    try {
+      final token = await _getToken();
+      final response = await _dio.get(
+        '/student/All',
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      return response.data;
+    } catch (e) {
+      print('Error in getAllStudents: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> createResult(Map<String, dynamic> payload) async {
+    try {
+      final token = await _getToken();
+      print('Sending createResult payload: $payload');
+      final response = await _dio.post(
+        '/register',
+        data: payload,
+        options: Options(
+          headers: {'Authorization': 'Bearer $token'},
+        ),
+      );
+      print('createResult response: ${response.data}');
+      return response.data;
+    } catch (e) {
+      print('Error in createResult: $e');
+      rethrow;
     }
   }
 
@@ -480,13 +601,18 @@ Future<List<Map<String, dynamic>>> getAllItems() async {
       );
       return await _handleResponse(response);
     } catch (e) {
+      debugPrint('Error calculating inventory: $e');
       throw Exception('Error calculating inventory: $e');
     }
   }
 
-  Future<void> deleteJwtToken() async {}
-
-  Future createItem(String itemName) async {}
-
-  static Future createStock(Map<String, dynamic> payload) async {}
+  Future<void> deleteJwtToken() async {
+    try {
+      await _storage.delete(key: 'auth_token');
+      debugPrint('JWT token deleted');
+    } catch (e) {
+      debugPrint('Error deleting JWT token: $e');
+      throw Exception('Error deleting JWT token: $e');
+    }
+  }
 }

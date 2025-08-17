@@ -1,11 +1,11 @@
+// File: add_new_student.dart
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:dio/dio.dart';
+import 'package:intl/intl.dart';
 import '../services/api_client.dart';
 
 class AddNewStudent extends StatefulWidget {
-  final String schoolId; // Add schoolId as required parameter
-  const AddNewStudent({super.key, required this.schoolId});
+  const AddNewStudent({super.key});
 
   @override
   State<AddNewStudent> createState() => _AddNewStudentState();
@@ -13,6 +13,7 @@ class AddNewStudent extends StatefulWidget {
 
 class _AddNewStudentState extends State<AddNewStudent> {
   final ApiService _apiService = ApiService();
+  final _formKey = GlobalKey<FormState>();
 
   // Controllers
   final TextEditingController registrController = TextEditingController();
@@ -32,6 +33,7 @@ class _AddNewStudentState extends State<AddNewStudent> {
   final TextEditingController motherTongueController = TextEditingController();
   final TextEditingController previousSchoolController = TextEditingController();
   final TextEditingController parentsPhnoController = TextEditingController();
+  final TextEditingController schoolIdController = TextEditingController();
 
   // Dropdown selections
   String? selectedCaste;
@@ -57,7 +59,7 @@ class _AddNewStudentState extends State<AddNewStudent> {
     });
 
     try {
-      final result = await _apiService.getAllClasses(schoolId: widget.schoolId);
+      final result = await _apiService.getAllClasses(schoolId: '');
 
       if (result['success'] == true && result['data'] is List) {
         setState(() {
@@ -112,57 +114,83 @@ class _AddNewStudentState extends State<AddNewStudent> {
     }
   }
 
-  Future<void> _submitForm() async {
-    try {
-      final formData = FormData.fromMap({
-        'name': nameController.text.trim(),
-        'rollNo': rollController.text.trim(),
-        'parentsPhno': parentsPhnoController.text.trim(),
-        if (selectedCaste != null) 'caste': selectedCaste,
-        if (subCasteController.text.isNotEmpty) 'subCaste': subCasteController.text.trim(),
-        if (selectedSex != null) 'sex': selectedSex,
-        if (aparIdController.text.isNotEmpty) 'aparId': aparIdController.text.trim(),
-        if (saralIdController.text.isNotEmpty) 'saralId': saralIdController.text.trim(),
-        if (phoneController.text.isNotEmpty) 'mobileNumber': phoneController.text.trim(),
-        if (dobController.text.isNotEmpty) 'dob': dobController.text.trim(),
-        if (admissionDateController.text.isNotEmpty) 'admissionDate': admissionDateController.text.trim(),
-        if (addressController.text.isNotEmpty) 'address': addressController.text.trim(),
-        if (motherTongueController.text.isNotEmpty) 'motherToung': motherTongueController.text.trim(),
-        if (previousSchoolController.text.isNotEmpty) 'previousSchool': previousSchoolController.text.trim(),
-        if (selectedClass != null) 'classId': selectedClass,
-        if (registrController.text.isNotEmpty) 'registerNumber': registrController.text.trim(),
-        if (motherController.text.isNotEmpty) 'motherName': motherController.text.trim(),
-        if (studentPhoto != null) 'photo': await MultipartFile.fromFile(studentPhoto!.path, filename: studentPhoto!.name),
-        if (aadharPhoto != null) 'adharNumber': await MultipartFile.fromFile(aadharPhoto!.path, filename: aadharPhoto!.name),
-        if (passbookPhoto != null) 'bankPassbook': await MultipartFile.fromFile(passbookPhoto!.path, filename: passbookPhoto!.name),
+  Future<void> selectAdmissionDate() async {
+    DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(1990),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        admissionDateController.text = "${picked.day}/${picked.month}/${picked.year}";
       });
+    }
+  }
+
+  Future<void> _submitForm() async {
+    if (_formKey.currentState!.validate()) {
+      if (studentPhoto == null || aadharPhoto == null || passbookPhoto == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('सर्व आवश्यक फोटो अपलोड करा')),
+        );
+        return;
+      }
+
+      // Format DOB
+      String? formattedDob;
+      if (dobController.text.trim().isNotEmpty) {
+        try {
+          final parsedDob = DateFormat('dd/MM/yyyy').parse(dobController.text.trim());
+          formattedDob = DateFormat('yyyy-MM-dd').format(parsedDob);
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('अवैध जन्मतारीख स्वरूप')),
+          );
+          return;
+        }
+      }
+
+      // Format Admission Date
+      String? formattedAdmissionDate;
+      if (admissionDateController.text.trim().isNotEmpty) {
+        try {
+          final parsedAdmission = DateFormat('dd/MM/yyyy').parse(admissionDateController.text.trim());
+          formattedAdmissionDate = DateFormat('yyyy-MM-dd').format(parsedAdmission);
+        } catch (e) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('अवैध प्रवेश तारीख स्वरूप')),
+          );
+          return;
+        }
+      }
 
       final response = await _apiService.registerStudent(
-        formData,
         name: nameController.text.trim(),
         rollNo: rollController.text.trim(),
         parentsPhno: parentsPhnoController.text.trim(),
         caste: selectedCaste,
-        subCaste: subCasteController.text.isNotEmpty ? subCasteController.text.trim() : null,
+        subCaste: subCasteController.text.trim(),
         sex: selectedSex,
-        aparId: aparIdController.text.isNotEmpty ? aparIdController.text.trim() : null,
-        saralId: saralIdController.text.isNotEmpty ? saralIdController.text.trim() : null,
-        mobileNumber: phoneController.text.isNotEmpty ? phoneController.text.trim() : null,
-        dob: dobController.text.isNotEmpty ? dobController.text.trim() : null,
-        admissionDate: admissionDateController.text.isNotEmpty ? admissionDateController.text.trim() : null,
-        address: addressController.text.isNotEmpty ? addressController.text.trim() : null,
-        motherToung: motherTongueController.text.isNotEmpty ? motherTongueController.text.trim() : null,
-        previousSchool: previousSchoolController.text.isNotEmpty ? previousSchoolController.text.trim() : null,
+        aparId: aparIdController.text.trim(),
+        saralId: saralIdController.text.trim(),
+        mobileNumber: phoneController.text.trim(),
+        dob: formattedDob,
+        admissionDate: formattedAdmissionDate,
+        address: addressController.text.trim(),
+        motherToung: motherTongueController.text.trim(),
+        previousSchool: previousSchoolController.text.trim(),
         classId: selectedClass,
-        registerNumber: registrController.text.isNotEmpty ? registrController.text.trim() : null,
-        motherName: motherController.text.isNotEmpty ? motherController.text.trim() : null,
+        registerNumber: registrController.text.trim(),
+        motherName: motherController.text.trim(),
         photo: studentPhoto,
         adharNumber: aadharPhoto,
         bankPassbook: passbookPhoto,
-        schoolId: widget.schoolId,
+        schoolId: schoolIdController.text.trim(),
       );
 
-      if (response['success'] == true) {
+      if (response['success'] == true ||
+          response['message']?.toString().toLowerCase().contains("created") == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("विद्यार्थी यशस्वीरित्या नोंदविला गेला")),
         );
@@ -172,54 +200,52 @@ class _AddNewStudentState extends State<AddNewStudent> {
           SnackBar(content: Text("त्रुटी: ${response['message'] ?? 'नोंदणी अयशस्वी'}")),
         );
       }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: ${e.toString()}")),
-      );
     }
   }
 
-  Widget buildTextField(String label, TextEditingController controller,
-      {bool isPassword = false}) {
+  Widget buildTextField(
+    String label,
+    TextEditingController controller, {
+    String? Function(String?)? validator,
+    TextInputType? keyboardType,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: TextField(
+      child: TextFormField(
         controller: controller,
-        obscureText: isPassword,
+        validator: validator,
+        keyboardType: keyboardType,
         decoration: InputDecoration(
           labelText: label,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          fillColor: Colors.blue.shade50,
+          prefixIcon: Icon(Icons.edit, color: Colors.blue),
         ),
       ),
     );
   }
 
-  Widget buildImageUploader(String label, XFile? image, VoidCallback onPressed) {
+  Widget buildImageUploader(String label, XFile? image, VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-          const SizedBox(height: 8),
-          Row(
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.blue.shade50,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              ElevatedButton.icon(
-                onPressed: onPressed,
-                icon: const Icon(Icons.upload_file, color: Colors.white),
-                label: const Text("फाईल निवडा", style: TextStyle(color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2E7D32),
-                ),
-              ),
-              const SizedBox(width: 10),
-              if (image != null)
-                const Icon(Icons.check_circle, color: Colors.teal, size: 24),
+              Text(image == null ? label : 'Image selected', style: const TextStyle(color: Colors.blue)),
+              const Icon(Icons.upload, color: Colors.blue),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -227,142 +253,150 @@ class _AddNewStudentState extends State<AddNewStudent> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF0F4C3),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF2E7D32),
-        title: const Text("नवीन विद्यार्थी जोडा", style: TextStyle(color: Colors.white)),
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
+        title: const Text('Add New Student', style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.blue.shade700,
+        elevation: 0,
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              buildTextField('नोंदणी क्रमांक:', registrController),
-              buildTextField('रोल नंबर:', rollController),
-              buildTextField('नाव:', nameController),
-              buildTextField('वडिलांचे नाव:', fatherController),
-              buildTextField('आईचे नाव:', motherController),
-              buildTextField('मोबाईल नंबर:', phoneController),
-              buildTextField('पत्ता:', addressController),
-              buildTextField('उपजात:', subCasteController),
-              buildTextField('APAR ID:', aparIdController),
-              buildTextField('SARAL ID:', saralIdController),
-              buildTextField('दाखल दिनांक:', admissionDateController),
-              buildTextField('मातृभाषा:', motherTongueController),
-              buildTextField('मागील शाळा:', previousSchoolController),
-              buildTextField('पालकांचा संपर्क:', parentsPhnoController),
-
-              const SizedBox(height: 16),
-
-              if (_isLoadingClasses)
-                const Center(child: CircularProgressIndicator())
-              else
-                DropdownButtonFormField<String>(
-                  value: selectedClass,
-                  hint: const Text("Select Class"),
-                  decoration: const InputDecoration(
-                    labelText: 'इयत्ता',
-                    border: OutlineInputBorder(),
-                    filled: true,
-                    fillColor: Colors.white,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Card(
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  buildTextField('Register Number:', registrController),
+                  buildTextField('Roll Number:', rollController),
+                  buildTextField('Name:', nameController),
+                  buildTextField('Mother Name:', motherController),
+                  buildTextField('Father Name:', fatherController),
+                  buildTextField('Phone Number:', phoneController, keyboardType: TextInputType.phone),
+                  buildTextField('Address:', addressController),
+                  buildTextField('Sub Caste:', subCasteController),
+                  buildTextField('APAR ID:', aparIdController),
+                  buildTextField('SARAL ID:', saralIdController),
+                  buildTextField('Mother Tongue:', motherTongueController),
+                  buildTextField('Previous School:', previousSchoolController),
+                  buildTextField('Parents Phone:', parentsPhnoController, keyboardType: TextInputType.phone),
+                  buildTextField('School ID:', schoolIdController),
+                  const SizedBox(height: 16),
+                  if (_isLoadingClasses)
+                    const Center(child: CircularProgressIndicator(color: Colors.blue))
+                  else
+                    DropdownButtonFormField<String>(
+                      value: selectedClass,
+                      hint: const Text("Select Class"),
+                      decoration: InputDecoration(
+                        labelText: 'Class',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        filled: true,
+                        fillColor: Colors.blue.shade50,
+                        prefixIcon: const Icon(Icons.class_, color: Colors.blue),
+                      ),
+                      items: _classList.map((classItem) {
+                        final String className =
+                            classItem['name'] ?? 'Class ${classItem['id']}';
+                        return DropdownMenuItem<String>(
+                          value: classItem['id'].toString(),
+                          child: Text(className),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          selectedClass = value;
+                        });
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                  buildTextField('Division:', divisionController),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedCaste,
+                    decoration: InputDecoration(
+                      labelText: 'Caste',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: Colors.blue.shade50,
+                      prefixIcon: const Icon(Icons.category, color: Colors.blue),
+                    ),
+                    items: casteOptions.map((String caste) {
+                      return DropdownMenuItem<String>(
+                        value: caste,
+                        child: Text(caste),
+                      );
+                    }).toList(),
+                    onChanged: (value) => setState(() => selectedCaste = value),
                   ),
-                  items: _classList.map((classItem) {
-                    final String className =
-                        classItem['name'] ?? 'Class ${classItem['id']}';
-                    return DropdownMenuItem<String>(
-                      value: classItem['id'].toString(),
-                      child: Text(className),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      selectedClass = value;
-                    });
-                  },
-                ),
-
-              const SizedBox(height: 16),
-
-              buildTextField('विभाग:', divisionController),
-              DropdownButtonFormField<String>(
-                value: selectedCaste,
-                decoration: const InputDecoration(
-                  labelText: 'जात',
-                  border: OutlineInputBorder(),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                items: casteOptions.map((String caste) {
-                  return DropdownMenuItem<String>(
-                    value: caste,
-                    child: Text(caste),
-                  );
-                }).toList(),
-                onChanged: (value) => setState(() => selectedCaste = value),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    value: selectedSex,
+                    decoration: InputDecoration(
+                      labelText: 'Sex',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: Colors.blue.shade50,
+                      prefixIcon: const Icon(Icons.person, color: Colors.blue),
+                    ),
+                    items: sexOptions
+                        .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                        .toList(),
+                    onChanged: (value) => setState(() => selectedSex = value),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: dobController,
+                    readOnly: true,
+                    onTap: selectDOB,
+                    decoration: InputDecoration(
+                      labelText: 'Date of Birth',
+                      prefixIcon: const Icon(Icons.calendar_today, color: Colors.blue),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: Colors.blue.shade50,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: admissionDateController,
+                    readOnly: true,
+                    onTap: selectAdmissionDate,
+                    decoration: InputDecoration(
+                      labelText: 'Admission Date',
+                      prefixIcon: const Icon(Icons.calendar_today, color: Colors.blue),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      filled: true,
+                      fillColor: Colors.blue.shade50,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  buildTextField('Aadhar Number:', aadharNumberController, keyboardType: TextInputType.number),
+                  buildImageUploader("Upload Student Photo", studentPhoto, () {
+                    pickImage(ImageSource.gallery, 'photo');
+                  }),
+                  buildImageUploader("Upload Aadhar Card", aadharPhoto, () {
+                    pickImage(ImageSource.gallery, 'aadhar');
+                  }),
+                  buildImageUploader("Upload Passbook Photo", passbookPhoto, () {
+                    pickImage(ImageSource.gallery, 'passbook');
+                  }),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: _submitForm,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text("Register Student", style: TextStyle(fontSize: 16)),
+                  ),
+                ],
               ),
-
-              const SizedBox(height: 16),
-
-              DropdownButtonFormField<String>(
-                value: selectedSex,
-                decoration: const InputDecoration(
-                  labelText: 'लिंग',
-                  border: OutlineInputBorder(),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                items: sexOptions.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-                onChanged: (value) => setState(() => selectedSex = value),
-              ),
-
-              const SizedBox(height: 16),
-
-              TextField(
-                controller: dobController,
-                readOnly: true,
-                onTap: selectDOB,
-                decoration: const InputDecoration(
-                  labelText: 'जन्मतारीख',
-                  prefixIcon: Icon(Icons.calendar_today),
-                  border: OutlineInputBorder(),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-              ),
-
-              buildTextField('आधार क्रमांक:', aadharNumberController),
-
-              buildImageUploader("विद्यार्थ्याचा फोटो अपलोड करा", studentPhoto, () {
-                pickImage(ImageSource.gallery, 'photo');
-              }),
-
-              buildImageUploader("आधार कार्ड अपलोड करा", aadharPhoto, () {
-                pickImage(ImageSource.gallery, 'aadhar');
-              }),
-
-              buildImageUploader("पासबुक फोटो अपलोड करा", passbookPhoto, () {
-                pickImage(ImageSource.gallery, 'passbook');
-              }),
-
-              const SizedBox(height: 25),
-
-              ElevatedButton(
-                onPressed: _submitForm,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2E7D32),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                child: const Text("विद्यार्थी नोंदणी करा"),
-              ),
-            ],
+            ),
           ),
         ),
       ),

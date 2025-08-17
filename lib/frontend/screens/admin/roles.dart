@@ -35,7 +35,6 @@ class _RolePageState extends State<RolePage> {
 
   Future<void> _showAddDialog(String role) async {
     Map<String, dynamic>? selectedUser;
-
     List<Map<String, dynamic>> eligibleUsers =
         allUsers.where((u) => u['role'] != role).toList();
 
@@ -43,17 +42,15 @@ class _RolePageState extends State<RolePage> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text('Assign role: $role'),
+          title: Text('Assign Role: $role'),
           content: DropdownButtonFormField<Map<String, dynamic>>(
             isExpanded: true,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Select User',
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
+              border: OutlineInputBorder(),
             ),
             items: eligibleUsers.map((user) {
-              return DropdownMenuItem<Map<String, dynamic>>(
+              return DropdownMenuItem(
                 value: user,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,20 +58,18 @@ class _RolePageState extends State<RolePage> {
                     Text('${user['name']}'),
                     Text(
                       '${user['enrollmentId']} (${user['email']})',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                   ],
                 ),
               );
             }).toList(),
-            onChanged: (value) {
-              selectedUser = value;
-            },
+            onChanged: (value) => selectedUser = value,
           ),
           actions: [
             TextButton(
               onPressed: Navigator.of(context).pop,
-              child: Text('Cancel', style: TextStyle(color: Colors.red)),
+              child: const Text('Cancel', style: TextStyle(color: Colors.red)),
             ),
             ElevatedButton(
               onPressed: () async {
@@ -82,18 +77,17 @@ class _RolePageState extends State<RolePage> {
                   final userId = selectedUser!['id'].toString();
                   await _apiService.putRequest(
                     '/user/update-role/$userId',
-                    data: { "role": role },
+                    data: {"role": role},
                   );
-
                   _fetchUsers();
                   Navigator.pop(context);
                 }
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A00E0),
+                backgroundColor: Colors.indigo.shade900,
               ),
               child: const Text('Assign'),
-            )
+            ),
           ],
         );
       },
@@ -104,51 +98,38 @@ class _RolePageState extends State<RolePage> {
     final users = getUsersByRole(roleName);
 
     return Card(
-      elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      color: Colors.white.withOpacity(0.95),
+      margin: const EdgeInsets.symmetric(vertical: 8),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Table Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   '$roleName Users',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF4A00E0),
-                  ),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
-                ElevatedButton.icon(
+                IconButton(
                   onPressed: () => _showAddDialog(roleName),
-                  icon: Icon(Icons.add, size: 16),
-                  label: Text("Add $roleName"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A00E0),
-                  ),
+                  icon: const Icon(Icons.add_circle, color: Colors.indigo),
+                  tooltip: 'Add $roleName',
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const Divider(),
+            // Table Body
             if (users.isEmpty)
-              Center(
-                child: Text(
-                  'No users assigned yet.',
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text('No $roleName assigned.', style: TextStyle(color: Colors.grey[600])),
               )
             else
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
                 child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(Colors.indigo.shade50),
                   columns: const [
                     DataColumn(label: Text('Enrollment ID')),
                     DataColumn(label: Text('Name')),
@@ -175,44 +156,21 @@ class _RolePageState extends State<RolePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF4A00E0),
+        backgroundColor: Colors.indigo.shade900,
         title: const Text('Role Management', style: TextStyle(color: Colors.white)),
         centerTitle: true,
-        elevation: 1,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Container(
-              width: double.infinity,
-              height: double.infinity,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF4A00E0), Color(0xFF8E2DE2)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Manage Roles & Assign Users',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      buildRoleTable("Admin"),
-                      buildRoleTable("Teacher"),
-                      buildRoleTable("Clark"),
-                      buildRoleTable("Food Manager"),
-                    ],
-                  ),
+          : Padding(
+              padding: const EdgeInsets.all(12),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    buildRoleTable("Admin"),
+                    buildRoleTable("Teacher"),
+                    buildRoleTable("Clerk"),
+                  ],
                 ),
               ),
             ),

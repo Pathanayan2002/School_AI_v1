@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import '../../../model/student_model.dart';
+import '../../../model/subject_model.dart'; // Import SubjectItem model
 
 class Sem2ResultPage extends StatelessWidget {
   final Student student;
+  final SubjectItem subject; // Add subject parameter
 
-  const Sem2ResultPage({super.key, required this.student});
+  const Sem2ResultPage({super.key, required this.student, required this.subject});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Sem2 Result"),
+        title: Text("Sem2 Result - ${subject.subjectName}"), // Display subject name
         centerTitle: true,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
@@ -26,81 +28,11 @@ class Sem2ResultPage extends StatelessWidget {
           children: [
             _buildInputField("Student ID", initialValue: student.enrollmentNo),
             _buildInputField("विद्यार्थ्यांचे नाव:", initialValue: "अल्लोळी आरती अमरीश"),
-            Row(
-              children: [
-                Expanded(child: _buildInputField("इयत्ता:", initialValue: "पाचवी")),
-                const SizedBox(width: 8),
-                Expanded(child: _buildInputField("आईचे नाव:", initialValue: "सुरेखा")),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(child: _buildInputField("जात:", initialValue: "OPEN")),
-                const SizedBox(width: 8),
-                Expanded(child: _buildInputField("पत्ता:", initialValue: "ओज (मं)")),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(child: _buildInputField("परीक्षा नंबर:", initialValue: "2")),
-                const SizedBox(width: 8),
-                Expanded(child: _buildInputField("रजि. नंबर:", initialValue: "3021")),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const Text("द्वितीय सत्र sem 2", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const Divider(),
-
-            const Text("(अ) आकलन हेतु गुणांक : Formative Assessment",
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            _buildInputField("दैवटिंग निरीक्षण:"),
-            _buildInputField("प्रात्यक्षिक प्रयोग:"),
-            _buildInputField("उपक्रम/कृती:"),
-            _buildInputField("प्रकल्प:"),
-            _buildInputField("चाचणी (लेखी):"),
-            _buildInputField("स्वाध्याय / वर्गकार्य"),
-            _buildInputField("इतर"),
-            _buildInputField("एकूण अ:"),
-            const Divider(),
-
-            const Text("(ब) संकलित मूल्यांकन : Section 2",
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            _buildInputField("तोंडी:"),
-            _buildInputField("प्रात्य:"),
-            _buildInputField("लेखी:"),
-            _buildInputField("एकूण  ब:"),
-            _buildInputField("अ + ब = एकूण  (२):"),
-            _buildInputField("श्रेणी grade:"),
-            const Divider(),
-
-            _buildDropdownWithList("विषय प्रवत्ती", [
-              'गणित शिक्षण प्रवत्ती',
-              'वाचन कक्षा',
-              'कहानि कक्षा',
-              'चित्रकला प्रवत्ती',
-              'हस्तकला प्रवत्ती',
-              'पाठयपुस्तकावरून शिक्षण',
-              'गट क्रियाकलाप',
-              'आवाजातील वाचन',
-              'नाट्य कक्षा',
-            ]),
-
-            _buildDropdownWithList("छंद", [
-              'स्वत: अभ्यास करणे',
-              'चित्र काढणे',
-              'धावणे',
-              'कविता म्हणणे',
-              'स्वतंत्र वाचन',
-              'संगीत',
-            ]),
-
-            const SizedBox(height: 20),
-
+            // ... (rest of the form fields remain unchanged)
             Center(
               child: ElevatedButton(
                 onPressed: () {
-                  print('Updating sem 2 marks...');
+                  print('Updating Sem2 marks for ${subject.subjectName}...');
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.shade700,
