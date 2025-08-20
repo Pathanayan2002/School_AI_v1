@@ -114,7 +114,7 @@ class _AssignClassAndSubjectPageState
     _teacherSubjects.clear();
     for (var user in _users) {
       final teacherId = user['id'].toString();
-      final subjects = await _apiService.getSubjectsForTeacher(teacherId, '');
+      final subjects = await _apiService.getSubjectsForTeacher(teacherId, '', classId: '');
     _teacherSubjects[teacherId] = subjects.map((s) {
   return {
     'subjectId': (s['subjectId'] ?? s['_id'] ?? s['id']).toString(),

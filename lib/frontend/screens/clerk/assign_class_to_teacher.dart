@@ -79,8 +79,8 @@ class _AssignClassToTeacherPageState extends State<AssignClassToTeacherPage> {
     try {
       final response = await _apiService.addTeachersToClass(
         classId: selectedClass!.id,
-        teacherIds: [selectedTeacher!.id.toString()], userId: '',
-        
+        teacherIds: [selectedTeacher!.id.toString()],
+        userId: '',
       );
 
       if (response['success'] == true) {

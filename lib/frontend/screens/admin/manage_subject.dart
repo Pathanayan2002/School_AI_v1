@@ -27,11 +27,39 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
     });
   }
 
+  /// ✅ Flexible success checker
+  bool _isSuccess(dynamic result) {
+    if (result == null) return false;
+
+    // If API has "success" key
+    if (result['success'] == true ||
+        result['success'] == 'true' ||
+        result['success'] == 1) {
+      return true;
+    }
+
+    // If API uses "status"
+    if (result['status'] == 200 ||
+        result['status'] == '200' ||
+        result['status'] == true) {
+      return true;
+    }
+
+    // If API uses "code"
+    if (result['code'] == 200) {
+      return true;
+    }
+
+    return false;
+  }
+
   Future<void> _fetchSubjects() async {
     setState(() => _isLoading = true);
     final result = await _apiService.getAllSubjects(schoolId: '');
 
-    if (result['success'] == true && result['data'] is List) {
+    debugPrint("Fetch Subjects Response: $result");
+
+    if (_isSuccess(result) && result['data'] is List) {
       final List<Map<String, dynamic>> subjectList =
           List<Map<String, dynamic>>.from(result['data']);
       setState(() {
@@ -39,9 +67,9 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
         _filteredSubjects = subjectList;
       });
     } else {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to load subjects: ${result['message'] ?? 'Unknown error'}")),
+      _showMessage(
+        result['message']?.toString() ?? "Failed to load subjects",
+        isError: true,
       );
     }
 
@@ -57,114 +85,166 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
     });
   }
 
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+      ),
+    );
+  }
+
   void _showAddSubjectDialog() {
     String newSubjectName = '';
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Add New Subject'),
-          content: TextField(
-            decoration: const InputDecoration(
-              labelText: 'Subject Name',
-              border: OutlineInputBorder(),
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Add New Subject'),
+            content: TextField(
+              decoration: const InputDecoration(
+                labelText: 'Subject Name',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (value) => newSubjectName = value.trim(),
             ),
-            onChanged: (value) => newSubjectName = value.trim(),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple,
+                ),
+                onPressed: _isSubmitting
+                    ? null
+                    : () async {
+                        if (newSubjectName.isEmpty) {
+                          _showMessage("Subject name cannot be empty",
+                              isError: true);
+                          return;
+                        }
+
+                        setDialogState(() => _isSubmitting = true);
+                        final result = await _apiService.registerSubject(
+                          name: newSubjectName,
+                          subjectName: '',
+                          classId: '',
+                          schoolId: '',
+                        );
+                        setDialogState(() => _isSubmitting = false);
+
+                        debugPrint("Add Subject Response: $result");
+
+                        if (_isSuccess(result)) {
+                          setState(() {
+                            _subjects.add({
+                              "id": result['id'] ??
+                                  DateTime.now().millisecondsSinceEpoch,
+                              "name": newSubjectName,
+                            });
+                            _filteredSubjects = _subjects;
+                          });
+                          _showMessage("Subject added successfully");
+                          Navigator.pop(context);
+                        } else {
+                          _showMessage(
+                            result['message']?.toString() ??
+                                "Failed to add subject",
+                            isError: true,
+                          );
+                        }
+                      },
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Add'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple),
-              onPressed: _isSubmitting
-                  ? null
-                  : () async {
-                      if (newSubjectName.isEmpty) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Please enter a valid subject name")),
-                        );
-                        return;
-                      }
-
-                      setState(() => _isSubmitting = true);
-                      final result = await _apiService.registerSubject(name: newSubjectName, subjectName: '', classId: '', schoolId: '');
-                      setState(() => _isSubmitting = false);
-
-                      if (!mounted) return;
-                      if (result['success'] == true ||
-                          (result['message']?.toString().toLowerCase().contains("created") ?? false)) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Subject added successfully")),
-                        );
-                        Navigator.pop(context);
-                        _fetchSubjects();
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Failed to add subject: ${result['message'] ?? 'Unknown error'}")),
-                        );
-                      }
-                    },
-              child: const Text('Add'),
-            ),
-          ],
         );
       },
     );
   }
 
   void _showEditSubjectDialog(int subjectId, String currentName) {
-    final TextEditingController nameController = TextEditingController(text: currentName);
+    final TextEditingController nameController =
+        TextEditingController(text: currentName);
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text('Edit Subject'),
-          content: TextField(
-            controller: nameController,
-            decoration: const InputDecoration(labelText: "Subject Name"),
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Edit Subject'),
+            content: TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: "Subject Name"),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                onPressed: _isSubmitting
+                    ? null
+                    : () async {
+                        final updatedName = nameController.text.trim();
+                        if (updatedName.isEmpty) {
+                          _showMessage("Subject name cannot be empty",
+                              isError: true);
+                          return;
+                        }
+
+                        setDialogState(() => _isSubmitting = true);
+                        final result = await _apiService.updateSubject(
+                          id: subjectId.toString(),
+                          name: updatedName,
+                          subjectName: '',
+                          classId: '',
+                          schoolId: '',
+                        );
+                        setDialogState(() => _isSubmitting = false);
+
+                        debugPrint("Update Subject Response: $result");
+
+                        if (_isSuccess(result)) {
+                          setState(() {
+                            final index = _subjects
+                                .indexWhere((subj) => subj['id'] == subjectId);
+                            if (index != -1) {
+                              _subjects[index]['name'] = updatedName;
+                            }
+                            _filteredSubjects = _subjects;
+                          });
+                          _showMessage("Subject updated successfully");
+                          Navigator.pop(context);
+                        } else {
+                          _showMessage(
+                            result['message']?.toString() ??
+                                "Failed to update subject",
+                            isError: true,
+                          );
+                        }
+                      },
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text("Save"),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              onPressed: _isSubmitting
-                  ? null
-                  : () async {
-                      final updatedName = nameController.text.trim();
-                      if (updatedName.isEmpty) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Subject name cannot be empty")),
-                        );
-                        return;
-                      }
-
-                      setState(() => _isSubmitting = true);
-                      final result = await _apiService.updateSubject(id: subjectId.toString(), name: updatedName, subjectName: '', classId: '', schoolId: '');
-                      setState(() => _isSubmitting = false);
-
-                      if (!mounted) return;
-                      if (result['success'] == true ||
-                          (result['message']?.toString().toLowerCase().contains("updated") ?? false)) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Subject updated successfully")),
-                        );
-                        Navigator.pop(context);
-                        _fetchSubjects();
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Failed to update subject: ${result['message'] ?? 'Unknown error'}")),
-                        );
-                      }
-                    },
-              child: const Text("Save"),
-            ),
-          ],
         );
       },
     );
@@ -174,40 +254,54 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: const Text("Confirm Delete"),
-          content: Text("Are you sure you want to delete '$subjectName'?"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: _isSubmitting
-                  ? null
-                  : () async {
-                      setState(() => _isSubmitting = true);
-                      final result = await _apiService.deleteSubject(subjectId.toString());
-                      setState(() => _isSubmitting = false);
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text("Confirm Delete"),
+            content: Text("Are you sure you want to delete '$subjectName' ?"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: _isSubmitting
+                    ? null
+                    : () async {
+                        setDialogState(() => _isSubmitting = true);
+                        final result = await _apiService
+                            .deleteSubject(subjectId.toString());
+                        setDialogState(() => _isSubmitting = false);
 
-                      if (!mounted) return;
-                      if (result['success'] == true ||
-                          (result['message']?.toString().toLowerCase().contains("deleted") ?? false)) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Subject deleted successfully")),
-                        );
-                        Navigator.pop(context);
-                        _fetchSubjects();
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Failed to delete subject: ${result['message'] ?? 'Unknown error'}")),
-                        );
-                      }
-                    },
-              child: const Text("Delete"),
-            ),
-          ],
+                        debugPrint("Delete Subject Response: $result");
+
+                        if (_isSuccess(result)) {
+                          setState(() {
+                            _subjects.removeWhere(
+                                (subj) => subj['id'] == subjectId);
+                            _filteredSubjects = _subjects;
+                          });
+                          _showMessage("Subject deleted successfully");
+                          Navigator.pop(context);
+                        } else {
+                          _showMessage(
+                            result['message']?.toString() ??
+                                "Failed to delete subject",
+                            isError: true,
+                          );
+                        }
+                      },
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text("Delete"),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -216,7 +310,7 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
   Widget _buildSubjectTable() {
     return Expanded(
       child: Card(
-        elevation: 5,
+        elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -230,7 +324,9 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
                       decoration: const InputDecoration(
                         hintText: "Search subjects...",
                         prefixIcon: Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(12)),
+                        ),
                       ),
                     ),
                   ),
@@ -260,9 +356,18 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
                       columns: const [
-                        DataColumn(label: Text("ID", style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text("Subject Name", style: TextStyle(fontWeight: FontWeight.bold))),
-                        DataColumn(label: Text("Actions", style: TextStyle(fontWeight: FontWeight.bold))),
+                        DataColumn(
+                          label: Text("ID",
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                        DataColumn(
+                          label: Text("Subject Name",
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                        DataColumn(
+                          label: Text("Actions",
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
                       ],
                       rows: _filteredSubjects.map((subject) {
                         final int? id = subject['id'] is int
@@ -279,7 +384,8 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.blue),
+                                    icon: const Icon(Icons.edit,
+                                        color: Colors.blue),
                                     tooltip: "Edit",
                                     onPressed: () {
                                       if (id != null) {
@@ -288,7 +394,8 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
                                     },
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
+                                    icon: const Icon(Icons.delete,
+                                        color: Colors.red),
                                     tooltip: "Delete",
                                     onPressed: () {
                                       if (id != null) {
@@ -316,7 +423,7 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Manage Subjects"),
+        title: Text("Manage Subjects", style: GoogleFonts.poppins()),
         backgroundColor: Colors.deepPurple,
         centerTitle: true,
       ),

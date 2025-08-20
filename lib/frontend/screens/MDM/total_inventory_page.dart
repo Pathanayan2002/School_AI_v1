@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../services/api_client.dart';
 
 class TotalInventoryPage extends StatefulWidget {
@@ -11,6 +12,7 @@ class TotalInventoryPage extends StatefulWidget {
 
 class _TotalInventoryPageState extends State<TotalInventoryPage> {
   final ApiService _apiService = ApiService();
+  final _formKey = GlobalKey<FormState>();
   List<Map<String, dynamic>> menus = [];
   List<Map<String, dynamic>> stocks = [];
   Map<String, dynamic>? selectedMenu;
@@ -34,44 +36,29 @@ class _TotalInventoryPageState extends State<TotalInventoryPage> {
       setState(() {
         menus = List<Map<String, dynamic>>.from(menusData['data'] ?? []);
         stocks = List<Map<String, dynamic>>.from(stocksData['data'] ?? []);
+        if (menus.isNotEmpty) selectedMenu = menus.first;
+        if (['1-5', '6-8'].contains(selectedClassGroup)) selectedClassGroup = '1-5';
       });
     } catch (e) {
-      debugPrint('Error loading menu/stock data: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load data: $e')),
-      );
+      if (kDebugMode) debugPrint('Error loading data: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to load data: $e')));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
   Future<void> _submitReport() async {
-    if (selectedMenu == null || selectedClassGroup == null || totalStudents <= 0 || className.isEmpty) {
+    if (!_formKey.currentState!.validate() || selectedMenu == null || selectedClassGroup == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all fields correctly')),
       );
       return;
     }
 
-    final classNumber = int.tryParse(className);
-    if (classNumber == null || classNumber < 1 || classNumber > 8) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Class number must be between 1 and 8')),
-      );
-      return;
-    }
-    if ((selectedClassGroup == '1-5' && classNumber > 5) ||
-        (selectedClassGroup == '6-8' && classNumber < 6)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Class number must match selected class group (1-5 or 6-8)')),
-      );
-      return;
-    }
-
     setState(() => isLoading = true);
     try {
-      final updatedStockList = <Map<String, dynamic>>[];
-      for (final item in (selectedMenu!['Items'] as List)) {
+      final itemsUsed = <Map<String, dynamic>>[];
+      for (final item in (selectedMenu!['Items'] as List? ?? [])) {
         final itemId = item['id'];
         final itemName = item['itemName'];
         final qtyPerStudent = selectedClassGroup == '1-5' ? item['quantity1_5'] : item['quantity6_8'];
@@ -86,52 +73,81 @@ class _TotalInventoryPageState extends State<TotalInventoryPage> {
           throw Exception('Stock not found for $itemName in group $selectedClassGroup');
         }
 
-        final updatedStock = {
-          'previousStock': matchingStock['previousStock'] as double,
-          'inwardMaterial': matchingStock['inwardMaterial'] as double,
-          'outwardMaterial': (matchingStock['outwardMaterial'] as double) + requiredQty,
-          'totalStock': matchingStock['previousStock'] +
-              matchingStock['inwardMaterial'] -
-              ((matchingStock['outwardMaterial'] as double) + requiredQty),
-          'classGroup': matchingStock['classGroup'],
-        };
+        final previousStock = (matchingStock['previousStock'] is int
+            ? (matchingStock['previousStock'] as int).toDouble()
+            : matchingStock['previousStock'] as double?) ?? 0.0;
+        final inwardMaterial = (matchingStock['inwardMaterial'] is int
+            ? (matchingStock['inwardMaterial'] as int).toDouble()
+            : matchingStock['inwardMaterial'] as double?) ?? 0.0;
+        final outwardMaterial = (matchingStock['outwardMaterial'] is int
+            ? (matchingStock['outwardMaterial'] as int).toDouble()
+            : matchingStock['outwardMaterial'] as double?) ?? 0.0;
 
-        await _apiService.updateStock(
+        final updatedOutward = outwardMaterial + requiredQty;
+        final updatedTotalStock = previousStock + inwardMaterial - updatedOutward;
+
+        if (updatedTotalStock < 0) {
+          throw Exception('Insufficient stock for $itemName in group $selectedClassGroup');
+        }
+
+        itemsUsed.add({
+          'itemId': itemId.toString(),
+          'itemName': itemName,
+          'requiredQuantity': requiredQty,
+        });
+
+        final response = await _apiService.updateStock(
           id: matchingStock['id'].toString(),
-          previousStock: updatedStock['previousStock'],
-          inwardMaterial: updatedStock['inwardMaterial'],
-          outwardMaterial: updatedStock['outwardMaterial'],
-          totalStock: updatedStock['totalStock'],
-          classGroup: updatedStock['classGroup'], updates: {},
+          previousStock: previousStock,
+          inwardMaterial: inwardMaterial,
+          outwardMaterial: updatedOutward,
+          totalStock: updatedTotalStock,
+          classGroup: selectedClassGroup!,
         );
 
-        updatedStockList.add({
-          'itemName': itemName,
-          'remainingStock': updatedStock['totalStock'],
-        });
+        if (!response['success']) {
+          throw Exception(response['statusMessage'] ?? 'Failed to update stock for $itemName');
+        }
       }
 
-      final today = DateFormat('dd-MM-yyyy').format(DateTime.now());
-      final response = await _apiService.createReport(
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final reportResponse = await _apiService.createReport(
         date: today,
-        menuId: selectedMenu!['id'].toString(),
-        totalStudents: totalStudents,
-        className: className,
+
+        totalStudent: totalStudents,  menuId: '', className: '',
+   
       );
 
-      if (response['statusCode'] == 201) {
+      if (reportResponse['success']) {
+        final updatedStockList = itemsUsed.map((item) {
+          final matchingStock = stocks.firstWhere(
+            (s) => s['ItemId'] == item['itemId'] && s['classGroup'] == selectedClassGroup,
+          );
+          final previousStock = (matchingStock['previousStock'] is int
+              ? (matchingStock['previousStock'] as int).toDouble()
+              : matchingStock['previousStock'] as double?) ?? 0.0;
+          final inwardMaterial = (matchingStock['inwardMaterial'] is int
+              ? (matchingStock['inwardMaterial'] as int).toDouble()
+              : matchingStock['inwardMaterial'] as double?) ?? 0.0;
+          final outwardMaterial = (matchingStock['outwardMaterial'] is int
+              ? (matchingStock['outwardMaterial'] as int).toDouble()
+              : matchingStock['outwardMaterial'] as double?) ?? 0.0;
+          final totalStock = previousStock + inwardMaterial - (outwardMaterial + item['requiredQuantity']);
+          return {
+            'itemName': item['itemName'],
+            'remainingStock': totalStock,
+          };
+        }).toList();
+
         setState(() => remainingStockList = updatedStockList);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Report created and stock updated')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report created and stock updated')));
+        await _loadMenusAndStocks();
       } else {
-        throw Exception(response['statusMessage'] ?? 'Failed to create report');
+        throw Exception(reportResponse['statusMessage'] ?? 'Failed to create report');
       }
     } catch (e) {
-      debugPrint('Report error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed: $e')),
-      );
+      if (kDebugMode) debugPrint('Report error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e')));
     } finally {
       setState(() => isLoading = false);
     }
@@ -141,96 +157,103 @@ class _TotalInventoryPageState extends State<TotalInventoryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Total Inventory Report'),
+        title: const Text('Create Inventory Report'),
         backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
-              child: Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 4,
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      DropdownButtonFormField<Map<String, dynamic>>(
-                        value: selectedMenu,
-                        decoration: const InputDecoration(labelText: 'Select Menu'),
-                        items: menus
-                            .map((m) => DropdownMenuItem(
-                                  value: m,
-                                  child: Text(m['dishName'] ?? ''),
-                                ))
-                            .toList(),
-                        onChanged: (val) => setState(() => selectedMenu = val),
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<String>(
-                        value: selectedClassGroup,
-                        decoration: const InputDecoration(labelText: 'Select Class Group'),
-                        items: ['1-5', '6-8']
-                            .map((g) => DropdownMenuItem(value: g, child: Text(g)))
-                            .toList(),
-                        onChanged: (val) => setState(() => selectedClassGroup = val),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Class Number (1-8)',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (val) => setState(() => className = val.trim()),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Total Students',
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (val) => totalStudents = int.tryParse(val.trim()) ?? 0,
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.save_alt),
-                          onPressed: _submitReport,
-                          label: const Text('Submit Report'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.teal,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Card(
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Create Report', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 16),
+                            DropdownButtonFormField<Map<String, dynamic>>(
+                              decoration: const InputDecoration(labelText: 'Select Menu', border: OutlineInputBorder()),
+                              value: selectedMenu,
+                              items: menus.map((m) => DropdownMenuItem(value: m, child: Text(m['dishName'] ?? ''))).toList(),
+                              onChanged: (val) => setState(() => selectedMenu = val),
+                              validator: (val) => val == null ? 'Select a menu' : null,
                             ),
+                            const SizedBox(height: 16),
+                            DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(labelText: 'Select Class Group', border: OutlineInputBorder()),
+                              value: selectedClassGroup,
+                              items: const [
+                                DropdownMenuItem(value: '1-5', child: Text('Classes 1-5')),
+                                DropdownMenuItem(value: '6-8', child: Text('Classes 6-8')),
+                              ],
+                              onChanged: (val) => setState(() => selectedClassGroup = val),
+                              validator: (val) => val == null ? 'Select a class group' : null,
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              decoration: const InputDecoration(labelText: 'Class Number (1-8)', border: OutlineInputBorder()),
+                              keyboardType: TextInputType.number,
+                              onChanged: (val) => setState(() => className = val.trim()),
+                              validator: (val) {
+                                if (val == null || val.trim().isEmpty) return 'Enter class number';
+                                final num = int.tryParse(val.trim());
+                                if (num == null || num < 1 || num > 8) return 'Class number must be between 1 and 8';
+                                if (selectedClassGroup == '1-5' && num > 5) return 'Class number must be 1-5';
+                                if (selectedClassGroup == '6-8' && num < 6) return 'Class number must be 6-8';
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            TextFormField(
+                              decoration: const InputDecoration(labelText: 'Total Students', border: OutlineInputBorder()),
+                              keyboardType: TextInputType.number,
+                              onChanged: (val) => setState(() => totalStudents = int.tryParse(val) ?? 0),
+                              validator: (val) {
+                                if (val == null || int.tryParse(val) == null || int.parse(val) <= 0) {
+                                  return 'Enter valid number of students';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: isLoading ? null : _submitReport,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.teal,
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                              ),
+                              child: const Text('Submit Report'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (remainingStockList.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text('Remaining Stock', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      Card(
+                        elevation: 2,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            children: remainingStockList
+                                .map((stock) => ListTile(
+                                      title: Text(stock['itemName'] ?? 'Unknown Item'),
+                                      subtitle: Text('Remaining: ${stock['remainingStock']?.toStringAsFixed(2) ?? '0'}'),
+                                    ))
+                                .toList(),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      if (remainingStockList.isNotEmpty)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Remaining Stock:',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                )),
-                            const SizedBox(height: 8),
-                            ...remainingStockList.map((s) => Text(
-                                  '${s['itemName']}: ${s['remainingStock']}',
-                                  style: const TextStyle(fontSize: 14),
-                                )),
-                          ],
-                        ),
                     ],
-                  ),
+                  ],
                 ),
               ),
             ),

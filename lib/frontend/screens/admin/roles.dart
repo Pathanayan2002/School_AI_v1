@@ -104,7 +104,6 @@ class _RolePageState extends State<RolePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Table Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -120,7 +119,6 @@ class _RolePageState extends State<RolePage> {
               ],
             ),
             const Divider(),
-            // Table Body
             if (users.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(8.0),

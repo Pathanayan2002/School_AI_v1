@@ -32,116 +32,147 @@ class _ResultEntryPageState extends State<ResultEntryPage> {
   String? errorMessage;
 
   @override
-  void dispose() {
-    _formativeController.dispose();
-    _summativeController.dispose();
-    _specialProgressController.dispose();
-    _hobbiesController.dispose();
-    _areasOfImprovementController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _checkPermission();
   }
 
-  Future<void> _submitResult() async {
-    if (!_formKey.currentState!.validate()) return;
-
+  Future<void> _checkPermission() async {
     setState(() {
       isLoading = true;
-      errorMessage = null;
     });
-
     try {
-      final formativeText = _formativeController.text.trim();
-      final summativeText = _summativeController.text.trim();
-      print('Raw input - Formative: $formativeText, Summative: $summativeText');
-
-      final formative = double.tryParse(formativeText);
-      final summative = double.tryParse(summativeText);
-
-      if (formative == null || summative == null) {
+      final teacherId = await _apiService.getCurrentUserId();
+      if (teacherId == null) {
         setState(() {
-          errorMessage = 'Invalid marks entered. Please enter valid numbers.';
+          errorMessage = 'Teacher ID not found. Please log in again.';
           isLoading = false;
         });
         return;
       }
-      if (formative < 0 || summative < 0) {
-        setState(() {
-          errorMessage = 'Marks cannot be negative.';
-          isLoading = false;
-        });
-        return;
-      }
-      if (formative.isNaN || summative.isNaN || formative.isInfinite || summative.isInfinite) {
-        setState(() {
-          errorMessage = 'Invalid marks format. Please enter valid numbers.';
-          isLoading = false;
-        });
-        return;
-      }
-
-      final total = formative + summative;
-      final subjectData = {
-        'subjectName': widget.subject.subjectName,
-        'formativeAssesment': formative.toDouble(),
-        'summativeAssesment': summative.toDouble(),
-        'total': total.toDouble(),
-        'grade': _calculateGrade(total),
-      };
-
-      // Validate JSON serialization
-      try {
-        final testJson = jsonEncode(subjectData);
-        jsonDecode(testJson); // Ensure it’s valid JSON
-        print('Validated subject JSON: $testJson');
-      } catch (e) {
-        setState(() {
-          errorMessage = 'Invalid data format for submission.';
-          isLoading = false;
-        });
-        print('JSON validation error: $e');
-        return;
-      }
-
-      final payload = {
-        'studentId': widget.student.id.toString(),
-        'schoolId': 'AIZTSSM004',
-        'semester': widget.semester,
-        'specialProgress': _specialProgressController.text.trim(),
-        'hobbies': _hobbiesController.text.trim(),
-        'areasOfImprovement': _areasOfImprovementController.text.trim(),
-        'subjects': {widget.subject.id.toString(): subjectData},
-      };
-
-      // Debug: Log the full payload
-      print('Submitting payload: ${jsonEncode(payload)}');
-
-      final response = await _apiService.createResult(payload, studentId: '', schoolId: '', semester: '', subjects: {});
-
-      // Debug: Log the API response
-      print('API response: ${jsonEncode(response)}');
-
-      if (response['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Result submitted successfully'), backgroundColor: Colors.green),
-        );
-        Navigator.pop(context);
+      final response = await _apiService.getSubjectById(widget.subject.id.toString());
+      if (response['success'] && response['data'] != null) {
+        if (response['data']['teacherId']?.toString() != teacherId) {
+          setState(() {
+            errorMessage = 'You do not have permission to assign marks for this subject.';
+            isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(errorMessage!)),
+          );
+          Future.delayed(const Duration(seconds: 2), () => Navigator.pop(context));
+        }
       } else {
         setState(() {
-          errorMessage = response['message'] ?? 'Failed to submit result';
+          errorMessage = 'Failed to verify permission.';
+          isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
-        errorMessage = 'Error submitting result: $e';
-      });
-      print('Submission error: $e');
-    } finally {
-      setState(() {
+        errorMessage = 'Error checking permission: $e';
         isLoading = false;
       });
     }
   }
 
+ Future<void> _submitResult() async {
+  if (!_formKey.currentState!.validate()) return;
+
+  setState(() {
+    isLoading = true;
+    errorMessage = null;
+  });
+
+  try {
+    final schoolId = await _apiService.getCurrentSchoolId();
+    if (schoolId == null || schoolId.isEmpty) {
+      setState(() {
+        errorMessage = 'शाळेचा आयडी सापडला नाही. कृपया पुन्हा लॉग इन करा.';
+        isLoading = false;
+      });
+      return;
+    }
+
+    final formativeText = _formativeController.text.trim();
+    final summativeText = _summativeController.text.trim();
+
+    final formative = double.tryParse(formativeText);
+    final summative = double.tryParse(summativeText);
+
+    if (formative == null || summative == null) {
+      setState(() {
+        errorMessage = 'अवैध गुण प्रविष्ट केले. कृपया वैध संख्या प्रविष्ट करा.';
+        isLoading = false;
+      });
+      return;
+    }
+    if (formative < 0 || summative < 0) {
+      setState(() {
+        errorMessage = 'गुण नकारात्मक असू शकत नाहीत.';
+        isLoading = false;
+      });
+      return;
+    }
+    if (formative.isNaN || summative.isNaN || formative.isInfinite || summative.isInfinite) {
+      setState(() {
+        errorMessage = 'अवैध गुण स्वरूप. कृपया वैध संख्या प्रविष्ट करा.';
+        isLoading = false;
+      });
+      return;
+    }
+
+    final total = formative + summative;
+    final subjectData = {
+      widget.subject.id.toString(): {
+        'subjectName': widget.subject.subjectName,
+        'formativeAssesment': formative,
+        'summativeAssesment': summative,
+        'total': total,
+        'grade': _calculateGrade(total),
+      }
+    };
+
+    // Construct the payload
+    final payload = {
+      'studentId': widget.student.id.toString(),
+      'schoolId': schoolId,
+      'semester': widget.semester,
+      'subjects': subjectData,
+      'specialProgress': _specialProgressController.text.trim(),
+      'hobbies': _hobbiesController.text.trim(),
+      'areasOfImprovement': _areasOfImprovementController.text.trim(),
+    };
+
+    print('Submitting payload: ${jsonEncode(payload)}');
+
+    // Call createResult with positional argument
+    final response = await _apiService.createResult(payload);
+
+    print('API response: ${jsonEncode(response)}');
+
+    if (response['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('निकाल यशस्वीरित्या सबमिट केला'), backgroundColor: Colors.green),
+      );
+      Navigator.pop(context);
+    } else {
+      setState(() {
+        errorMessage = response['message'] ?? 'निकाल सबमिट करण्यात अयशस्वी';
+      });
+    }
+  } catch (e) {
+    setState(() {
+      errorMessage = 'निकाल सबमिट करण्यात त्रुटी: $e';
+    });
+    print('Submission error: $e');
+  } finally {
+    setState(() {
+      isLoading = false;
+    });
+  }
+} 
+  
   String _calculateGrade(double total) {
     if (total >= 90) return 'A+';
     if (total >= 80) return 'A';
@@ -149,6 +180,31 @@ class _ResultEntryPageState extends State<ResultEntryPage> {
     if (total >= 60) return 'B';
     if (total >= 50) return 'C';
     return 'F';
+  }
+
+  Widget _buildInputField(
+    String label, {
+    String? initialValue,
+    TextEditingController? controller,
+    bool enabled = true,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: TextFormField(
+        initialValue: controller == null ? initialValue : null,
+        controller: controller,
+        enabled: enabled,
+        keyboardType: keyboardType,
+        validator: validator,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        ),
+      ),
+    );
   }
 
   @override
@@ -234,28 +290,13 @@ class _ResultEntryPageState extends State<ResultEntryPage> {
     );
   }
 
-  Widget _buildInputField(
-    String label, {
-    String? initialValue,
-    TextEditingController? controller,
-    bool enabled = true,
-    TextInputType? keyboardType,
-    String? Function(String?)? validator,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: TextFormField(
-        initialValue: controller == null ? initialValue : null,
-        controller: controller,
-        enabled: enabled,
-        keyboardType: keyboardType,
-        validator: validator,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        ),
-      ),
-    );
+  @override
+  void dispose() {
+    _formativeController.dispose();
+    _summativeController.dispose();
+    _specialProgressController.dispose();
+    _hobbiesController.dispose();
+    _areasOfImprovementController.dispose();
+    super.dispose();
   }
 }

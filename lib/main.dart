@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:month_year_picker/month_year_picker.dart';
+
 import '/frontend/screens/auth/login.dart';
 import '/frontend/screens/admin/admin_home_page.dart';
 import '/frontend/screens/clerk/clerk_home_page.dart';
@@ -23,6 +26,19 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.deepPurple,
         textTheme: GoogleFonts.poppinsTextTheme(),
       ),
+
+      // ✅ Needed for month_year_picker + internationalization
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        MonthYearPickerLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', ''), // English
+        Locale('hi', ''), // Hindi (add more locales as needed)
+      ],
+
       initialRoute: '/splash',
       routes: {
         '/splash': (context) => const SplashPage(),
@@ -43,7 +59,7 @@ class MyApp extends StatelessWidget {
           if (clerkId == 0) {
             return const LoginPage();
           }
-          return ClerkHomePage(clerkId: clerkId,);
+          return ClerkHomePage(clerkId: clerkId);
         },
         '/mdm': (context) => const MDMHomePage(),
       },
@@ -71,9 +87,11 @@ class _SplashPageState extends State<SplashPage> {
   Future<void> _checkSession() async {
     final storage = const FlutterSecureStorage();
     final token = await storage.read(key: 'token');
+
     if (token != null && !JwtDecoder.isExpired(token)) {
       final role = await storage.read(key: 'user_role');
       final userId = await storage.read(key: 'user_id');
+
       if (role != null && userId != null) {
         switch (role) {
           case 'Admin':
@@ -92,6 +110,7 @@ class _SplashPageState extends State<SplashPage> {
         }
       }
     }
+
     Navigator.pushReplacementNamed(context, '/login');
   }
 

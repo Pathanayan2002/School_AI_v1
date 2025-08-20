@@ -1,531 +1,407 @@
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'package:file_saver/file_saver.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:excel/excel.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'dart:developer' as developer;
-import '../../model/class_model.dart';
-import '../../model/student_model.dart';
+import 'package:universal_io/io.dart' show File;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/api_client.dart';
-import '../teacher/assign_marks.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 
-class ClerkResultReportScreen extends StatefulWidget {
+class ClerkResultReportPage extends StatefulWidget {
   static const routeName = '/clerkResultReport';
-  const ClerkResultReportScreen({super.key});
+  const ClerkResultReportPage({super.key});
 
   @override
-  State<ClerkResultReportScreen> createState() => _ClerkResultReportScreenState();
+  _ClerkResultReportPageState createState() => _ClerkResultReportPageState();
 }
 
-class _ClerkResultReportScreenState extends State<ClerkResultReportScreen> {
+class _ClerkResultReportPageState extends State<ClerkResultReportPage> {
   final ApiService _apiService = ApiService();
-  List<ClassModel> classes = [];
-  Map<String, List<Student>> classStudents = {};
-  bool isLoading = true;
-  String? errorMessage;
-  Student? selectedStudent;
-  Map<String, dynamic>? studentResult;
-  List<String> subjectIds = [];
-  Map<String, String> subjectIdToName = {};
-  String? selectedSubjectId;
-  Map<String, Map<String, dynamic>> studentResults = {};
+  String? _schoolId;
+  List<Map<String, dynamic>> _results = [];
+  List<Map<String, dynamic>> _filteredResults = [];
+  List<dynamic> _classes = [];
+  String? _selectedClassId;
+  String _selectedSemester = 'All';
+  List<dynamic> _students = [];
+  bool _isLoading = true;
+  String? _errorMessage;
+  bool _isExporting = false;
 
-  final Map<String, String> marathiTranslations = {
-    'Student Result Report': 'विद्यार्थ्यांचा निकाल अहवाल',
-    'Name': 'नाव',
-    'Enrollment ID': 'नावनोंदणी आयडी',
-    'Semester': 'सत्र',
-    'Total': 'एकूण',
-    'Grade': 'श्रेणी',
-    'Subject Name': 'विषयाचे नाव',
-    'Formative': 'रचनात्मक',
-    'Summative': 'संक्षेपात्मक',
-    'Results for Subject': 'विषयासाठी निकाल',
-  };
+  final List<String> _semesters = ['All', '1', '2'];
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadInitialData();
   }
 
-  Future<void> _loadData() async {
-    setState(() => isLoading = true);
-    try {
-      // Replace '' with actual schoolId or handle as needed
-      final subjectsResponse = await _apiService.getAllSubjects(schoolId: '1'); // Assuming schoolId is a string
-      if (subjectsResponse['success'] != true) throw Exception('विषय लोड करण्यात अयशस्वी');
-      final subjectList = subjectsResponse['data'] as List<dynamic>;
-      subjectIds = subjectList.map((s) => s['id'].toString()).toList();
-      subjectIdToName = {for (var s in subjectList) s['id'].toString(): s['name']?.toString() ?? 'Unknown'};
-      selectedSubjectId = subjectIds.isNotEmpty ? subjectIds.first : null;
-
-      final classesResponse = await _apiService.getAllClasses(schoolId: '1'); // Assuming schoolId is a string
-      if (classesResponse['success'] != true) throw Exception('वर्ग लोड करण्यात अयशस्वी');
-      final classList = classesResponse['data'] as List<dynamic>;
-      classes = classList.map((c) => ClassModel.fromJson(c)).toList();
-      classStudents = {
-        for (var c in classList)
-          c['id'].toString(): (c['students'] as List<dynamic>?)?.map((s) => Student.fromJson(s)).toList() ?? []
-      };
-
-      if (classes.isEmpty || subjectIds.isEmpty) errorMessage = 'कोणतेही वर्ग किंवा विषय उपलब्ध नाहीत';
-    } catch (e) {
-      errorMessage = 'डेटा लोड करण्यात त्रुटी: $e';
-      developer.log('Error in _loadData: $e', name: 'ClerkResultReportScreen');
-    }
-    setState(() => isLoading = false);
-  }
-
-  Future<void> _loadStudentResult(Student student) async {
+  Future<void> _loadInitialData() async {
     setState(() {
-      isLoading = true;
-      selectedStudent = student;
-      studentResult = null;
+      _isLoading = true;
+      _errorMessage = null;
     });
 
     try {
-      final result = await _apiService.getFinalResultByStudentId(student.id.toString());
-      if (result['success'] != true) throw Exception('निकाल प्राप्त करण्यात अयशस्वी');
+      await _apiService.init();
+      _schoolId = await _apiService.getCurrentSchoolId();
 
-      final semesterWise = Map<String, dynamic>.from(result['data']?['semesterWise'] ?? {});
-      final filteredSemesterWise = <String, dynamic>{};
-      for (var sem in ['1', '2']) {
-        if (semesterWise.containsKey(sem)) {
-          final subjects = Map<String, dynamic>.from(semesterWise[sem]['subjects'] ?? {})
-              .entries
-              .where((e) => subjectIds.contains(e.key))
-              .fold<Map<String, dynamic>>({}, (map, e) => map..[e.key] = e.value);
-          if (subjects.isNotEmpty) {
-            final totalMarks = subjects.values.fold<double>(0, (sum, s) => sum + (s['total']?.toDouble() ?? 0));
-            filteredSemesterWise[sem] = {
-              'subjects': subjects,
-              'totalMarks': totalMarks,
-              'grade': _calculateGrade(totalMarks > 0 ? (totalMarks / (subjects.length * 100)) * 100 : 0),
-            };
-          }
-        }
-      }
-
-      studentResult = {
-        'semesterWise': filteredSemesterWise,
-        'grandTotal': filteredSemesterWise.values.fold<double>(0, (sum, s) => sum + (s['totalMarks'] ?? 0)),
-      };
-      setState(() {});
-      if (filteredSemesterWise.isEmpty) _showError('निकाल उपलब्ध नाहीत');
-    } catch (e) {
-      _showError('निकाल प्राप्त करण्यात त्रुटी: $e');
-      setState(() => errorMessage = 'निकाल प्राप्त करण्यात त्रुटी: $e');
-    } finally {
-      setState(() => isLoading = false);
-    }
-  }
-
-  String _calculateGrade(double percentage) {
-    if (percentage >= 90) return 'A+';
-    if (percentage >= 80) return 'A';
-    if (percentage >= 70) return 'B';
-    if (percentage >= 60) return 'C';
-    if (percentage >= 50) return 'D';
-    return 'F';
-  }
-
-  Future<bool> _requestStoragePermission() async {
-    if (!Platform.isAndroid) return true;
-    final androidInfo = await DeviceInfoPlugin().androidInfo;
-    final sdkInt = androidInfo.version?.sdkInt ?? 0;
-
-    if (sdkInt < 30) {
-      if (await Permission.storage.request().isGranted) return true;
-    } else if (sdkInt <= 33) {
-      if (await Permission.manageExternalStorage.request().isGranted) return true;
-    } else {
-      if ((await Permission.photos.request().isGranted) &&
-          (await Permission.videos.request().isGranted) &&
-          (await Permission.audio.request().isGranted)) return true;
-    }
-    _showError('स्टोरेज परवानगी नाकारली');
-    return false;
-  }
-
-  Future<Uint8List?> _generateExcelForStudent(Student student, String sheetName) async {
-    return compute(_generateExcelForStudentInIsolate, {
-      'student': {'id': student.id.toString(), 'name': student.name, 'enrollmentNo': student.enrollmentNo},
-      'studentResult': studentResult,
-      'sheetName': sheetName,
-      'subjectIdToName': subjectIdToName,
-      'marathiTranslations': marathiTranslations,
-    });
-  }
-
-  static Future<Uint8List?> _generateExcelForStudentInIsolate(Map<String, dynamic> params) async {
-    final student = params['student'] as Map<String, dynamic>;
-    final studentResult = params['studentResult'] as Map<String, dynamic>?;
-    final sheetName = params['sheetName'] as String;
-    final subjectIdToName = params['subjectIdToName'] as Map<String, String>;
-    final marathiTranslations = params['marathiTranslations'] as Map<String, String>;
-
-    final excel = Excel.createExcel();
-    final sheet = excel[sheetName.length > 31 ? sheetName.substring(0, 31) : sheetName];
-
-    String getMarathi(String english) => marathiTranslations[english] ?? english;
-
-    sheet.appendRow([TextCellValue(getMarathi('Student Result Report'))]);
-    sheet.appendRow([
-      TextCellValue(getMarathi('Name')),
-      TextCellValue(getMarathi('Enrollment ID')),
-      TextCellValue(getMarathi('Semester')),
-      TextCellValue(getMarathi('Subject Name')),
-      TextCellValue(getMarathi('Formative')),
-      TextCellValue(getMarathi('Summative')),
-      TextCellValue(getMarathi('Total')),
-      TextCellValue(getMarathi('Grade')),
-    ]);
-
-    bool hasData = false;
-    final semesterWise = studentResult?['semesterWise'] ?? {};
-    for (var sem in ['1', '2']) {
-      if (semesterWise.containsKey(sem)) {
-        final subjects = Map<String, dynamic>.from(semesterWise[sem]['subjects'] ?? {});
-        for (var subjectEntry in subjects.entries) {
-          final subjectData = subjectEntry.value;
-          sheet.appendRow([
-            TextCellValue(student['name']?.toString() ?? 'Unknown'),
-            TextCellValue(student['enrollmentNo']?.toString() ?? '-'),
-            TextCellValue('${getMarathi('Semester')} $sem'),
-            TextCellValue(subjectIdToName[subjectEntry.key] ?? 'Unknown'),
-            TextCellValue(subjectData['formativeAssesment']?.toString() ?? '-'),
-            TextCellValue(subjectData['summativeAssesment']?.toString() ?? '-'),
-            TextCellValue(subjectData['total']?.toString() ?? '-'),
-            TextCellValue(subjectData['grade']?.toString() ?? '-'),
-          ]);
-          hasData = true;
-        }
-      }
-    }
-
-    if (!hasData) return null;
-    return Uint8List.fromList(await excel.encode() ?? []);
-  }
-
-  Future<void> _exportToExcel(Student student) async {
-    if (studentResult == null || studentResult!['semesterWise'].isEmpty) {
-      _showError('निकाल डेटा उपलब्ध नाही');
-      return;
-    }
-    if (!await _requestStoragePermission()) return;
-
-    setState(() => isLoading = true);
-    try {
-      final fileBytes = await _generateExcelForStudent(student, 'निकाल_${student.name ?? 'Student'}');
-      if (fileBytes == null) throw Exception('एक्सेल फाइल तयार करण्यात अयशस्वी');
-
-      final fileName = 'निकाल_${student.name ?? 'Student'}_${DateTime.now().toIso8601String().split('T')[0]}.xlsx';
-      final result = await FileSaver.instance.saveAs(
-        name: fileName,
-        bytes: fileBytes,
-        ext: 'xlsx',
-        mimeType: MimeType.custom,
-        customMimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      );
-      if (result != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('एक्सेल फाइल डाउनलोड झाली'), backgroundColor: Colors.green),
-        );
-      }
-    } catch (e) {
-      _showError('एक्सेल निर्यात अयशस्वी: $e');
-    } finally {
-      setState(() => isLoading = false);
-    }
-  }
-
-  Future<Uint8List?> _generateExcelForAllStudents(String subjectId, String sheetName) async {
-    return compute(_generateExcelForAllStudentsInIsolate, {
-      'subjectId': subjectId,
-      'sheetName': sheetName,
-      'studentResults': studentResults,
-      'classStudents': classStudents,
-      'subjectIdToName': subjectIdToName,
-      'marathiTranslations': marathiTranslations,
-    });
-  }
-
-  static Future<Uint8List?> _generateExcelForAllStudentsInIsolate(Map<String, dynamic> params) async {
-    final subjectId = params['subjectId'] as String;
-    final sheetName = params['sheetName'] as String;
-    final studentResults = params['studentResults'] as Map<String, Map<String, dynamic>>;
-    final classStudents = params['classStudents'] as Map<String, List<Student>>;
-    final subjectIdToName = params['subjectIdToName'] as Map<String, String>;
-    final marathiTranslations = params['marathiTranslations'] as Map<String, String>;
-
-    final excel = Excel.createExcel();
-    final sheet = excel[sheetName.length > 31 ? sheetName.substring(0, 31) : sheetName];
-
-    String getMarathi(String english) => marathiTranslations[english] ?? english;
-
-    sheet.appendRow([TextCellValue('${getMarathi('Results for Subject')}: ${subjectIdToName[subjectId] ?? 'Unknown'}')]);
-    sheet.appendRow([
-      TextCellValue(getMarathi('Name')),
-      TextCellValue(getMarathi('Enrollment ID')),
-      TextCellValue(getMarathi('Semester')),
-      TextCellValue(getMarathi('Formative')),
-      TextCellValue(getMarathi('Summative')),
-      TextCellValue(getMarathi('Total')),
-      TextCellValue(getMarathi('Grade')),
-    ]);
-
-    bool hasData = false;
-    for (var students in classStudents.values) {
-      for (var student in students) {
-        final semesterWise = studentResults[student.id.toString()]?['semesterWise'] ?? {};
-        for (var sem in ['1', '2']) {
-          if (semesterWise.containsKey(sem) && semesterWise[sem]['subjects']?.containsKey(subjectId) == true) {
-            final subjectData = semesterWise[sem]['subjects'][subjectId];
-            sheet.appendRow([
-              TextCellValue(student.name?.toString() ?? 'Unknown'),
-              TextCellValue(student.enrollmentNo?.toString() ?? '-'),
-              TextCellValue('${getMarathi('Semester')} $sem'),
-              TextCellValue(subjectData['formativeAssesment']?.toString() ?? '-'),
-              TextCellValue(subjectData['summativeAssesment']?.toString() ?? '-'),
-              TextCellValue(subjectData['total']?.toString() ?? '-'),
-              TextCellValue(subjectData['grade']?.toString() ?? '-'),
-            ]);
-            hasData = true;
-          }
-        }
-      }
-    }
-
-    if (!hasData) return null;
-    return Uint8List.fromList(await excel.encode() ?? []);
-  }
-
-  Future<void> _exportAllStudentsResults(String subjectId) async {
-    if (subjectId.isEmpty) {
-      _showError('विषय निवडा');
-      return;
-    }
-    if (!await _requestStoragePermission()) return;
-
-    setState(() => isLoading = true);
-    try {
-      studentResults.clear();
-      for (var classModel in classes) {
-        final students = classStudents[classModel.id.toString()] ?? [];
-        for (var student in students) {
-          final result = await _apiService.getFinalResultByStudentId(student.id.toString());
-          if (result['success'] == true) {
-            studentResults[student.id.toString()] = Map<String, dynamic>.from(result['data']?['semesterWise'] ?? {})
-                .map((sem, data) => MapEntry(sem, {
-                      'subjects': Map<String, dynamic>.from(data['subjects'] ?? {})
-                          .entries
-                          .where((e) => e.key == subjectId)
-                          .fold({}, (map, e) => map..[e.key] = e.value),
-                    }));
-          }
-        }
-      }
-
-      if (studentResults.values.every((result) => result.isEmpty)) {
-        _showError('विषय ${subjectIdToName[subjectId] ?? 'Unknown'} साठी निकाल उपलब्ध नाहीत');
-        setState(() => isLoading = false);
+      if (_schoolId == null) {
+        setState(() {
+          _errorMessage = 'शाळा सापडली नाही. कृपया पुन्हा लॉग इन करा.';
+          _isLoading = false;
+        });
         return;
       }
 
-      final fileBytes = await _generateExcelForAllStudents(subjectId, 'निकाल_${subjectIdToName[subjectId] ?? 'Subject'}');
-      if (fileBytes == null) throw Exception('एक्सेल फाइल तयार करण्यात अयशस्वी');
+      final classesResponse = await _apiService.getAllClasses(schoolId: _schoolId!);
+      final studentsResponse = await _apiService.getAllStudents();
 
-      final fileName = 'निकाल_${subjectIdToName[subjectId] ?? 'Subject'}_${DateTime.now().toIso8601String().split('T')[0]}.xlsx';
-      final result = await FileSaver.instance.saveAs(
-        name: fileName,
-        bytes: fileBytes,
-        ext: 'xlsx',
-        mimeType: MimeType.custom,
-        customMimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      );
-      if (result != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('एक्सेल फाइल डाउनलोड झाली'), backgroundColor: Colors.green),
-        );
+      if (kDebugMode) {
+        debugPrint('Classes Response: $classesResponse');
+        debugPrint('Students Response: $studentsResponse');
       }
+
+      if (classesResponse['success'] && classesResponse['data'] != null) {
+        _classes = List<Map<String, dynamic>>.from(classesResponse['data']);
+      } else {
+        setState(() {
+          _errorMessage = 'वर्ग लोड करण्यात अयशस्वी.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      if (studentsResponse['success'] && studentsResponse['data'] != null) {
+        _students = List<Map<String, dynamic>>.from(studentsResponse['data']);
+      } else {
+        setState(() {
+          _errorMessage = 'विद्यार्थी लोड करण्यात अयशस्वी.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      _results = [];
+      for (var student in _students) {
+        final studentId = student['id'].toString();
+        try {
+          final resultResponse = await _apiService.getOverallResult(studentId);
+          if (resultResponse['success'] && resultResponse['data'] != null) {
+            final result = resultResponse['data'];
+            result['studentName'] = student['name'];
+            result['classId'] = student['classId'];
+            _results.add(result);
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('No result found for student $studentId: $e');
+          }
+        }
+      }
+
+      setState(() {
+        _filterResults();
+        _isLoading = false;
+        _errorMessage = _results.isEmpty ? 'या शाळेसाठी निकाल सापडले नाहीत.' : null;
+      });
     } catch (e) {
-      _showError('निकाल निर्यात अयशस्वी: $e');
-    } finally {
-      setState(() => isLoading = false);
+      setState(() {
+        _errorMessage = 'डेटा लोड करण्यात त्रुटी: $e';
+        _isLoading = false;
+      });
+      if (kDebugMode) {
+        debugPrint('Error in _loadInitialData: $e');
+      }
     }
   }
 
-  void _editStudentResult(String subjectId, String semester, Map<String, dynamic> subjectData) {
-    if (selectedStudent == null) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AssignMarkPage(
-          subjectId: subjectId,
-          subjectName: subjectIdToName[subjectId] ?? 'Unknown',
-          studentId: selectedStudent!.id.toString(),
-          existingResult: {'subjects': {subjectId: subjectData}},
-          semester: semester,
-        ),
-      ),
-    ).then((_) => _loadStudentResult(selectedStudent!));
+  void _filterResults() {
+    setState(() {
+      _filteredResults = _results.where((result) {
+        final classMatch = _selectedClassId == null || result['classId']?.toString() == _selectedClassId;
+        final semesterMatch = _selectedSemester == 'All' ||
+            (result['semesterWise'] != null && result['semesterWise'][_selectedSemester] != null);
+        return classMatch && semesterMatch;
+      }).toList();
+      _errorMessage = _filteredResults.isEmpty
+          ? 'निवडलेल्या वर्ग आणि सेमेस्टरसाठी निकाल सापडले नाहीत.'
+          : null;
+    });
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
+  Future<void> _exportToExcel() async {
+    if (_filteredResults.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No data available to export.')),
+      );
+      return;
+    }
+
+    setState(() => _isExporting = true);
+
+    try {
+      final excel = Excel.createExcel();
+      final sheet = excel['Results'];
+
+      sheet.appendRow([
+        TextCellValue('Student Name'),
+        TextCellValue('Roll No'),
+        TextCellValue('Class'),
+        TextCellValue('Semester'),
+        TextCellValue('Grade'),
+        TextCellValue('Percentage'),
+        TextCellValue('Special Progress'),
+        TextCellValue('Hobbies'),
+        TextCellValue('Areas of Improvement'),
+      ]);
+
+      for (var result in _filteredResults) {
+        final student = _students.firstWhere(
+          (s) => s['id'].toString() == result['studentId'].toString(),
+          orElse: () => {'name': 'Unknown', 'rollNo': 'N/A', 'classId': 'N/A'},
+        );
+        final classData = _classes.firstWhere(
+          (c) => c['id'].toString() == student['classId']?.toString(),
+          orElse: () => {'name': 'Unknown'},
+        );
+
+        final semesters = _selectedSemester == 'All' ? ['1', '2'] : [_selectedSemester];
+        for (var sem in semesters) {
+          if (result['semesterWise']?[sem] != null) {
+            final semesterData = result['semesterWise'][sem];
+            sheet.appendRow([
+              TextCellValue(student['name']?.toString() ?? 'Unknown'),
+              TextCellValue(student['rollNo']?.toString() ?? 'N/A'),
+              TextCellValue(classData['name']?.toString() ?? 'Unknown'),
+              TextCellValue(sem),
+              TextCellValue(result['grandGrade']?.toString() ?? 'N/A'),
+              TextCellValue(result['grandPercentage']?.toStringAsFixed(2) ?? '0.00'),
+              TextCellValue(semesterData['specialProgress']?.toString() ?? 'N/A'),
+              TextCellValue(semesterData['hobbies']?.toString() ?? 'N/A'),
+              TextCellValue(semesterData['areasOfImprovement']?.toString() ?? 'N/A'),
+            ]);
+          }
+        }
+      }
+
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'Results_${_selectedClassId ?? 'All'}_${_selectedSemester}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      final filePath = '${directory.path}/$fileName';
+      final file = File(filePath);
+      await file.writeAsBytes(excel.encode()!);
+
+      await Share.shareXFiles([XFile(filePath)], text: 'Student Results Report');
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Excel file exported and shared: $fileName')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error exporting to Excel: $e')),
+      );
+    } finally {
+      setState(() => _isExporting = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('क्लर्क निकाल अहवाल'),
+        title: const Text(
+          'Students Result Reports',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
         backgroundColor: Colors.blueAccent,
-        foregroundColor: Colors.white,
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : errorMessage != null && selectedStudent != null
-              ? Center(
-                  child: Card(
-                    margin: const EdgeInsets.all(16),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(errorMessage!, style: const TextStyle(color: Colors.red)),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () => setState(() {
-                              selectedStudent = null;
-                              studentResult = null;
-                              errorMessage = null;
-                            }),
-                            child: const Text('परत'),
-                          ),
-                        ],
-                      ),
+        elevation: 0,
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: _isExporting
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
+                  )
+                : const Icon(Icons.download),
+            onPressed: _isExporting ? null : _exportToExcel,
+            tooltip: 'Export to Excel',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.blueAccent))
+          : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red, fontSize: 16),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _loadInitialData,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('Retry'),
+                      ),
+                    ],
                   ),
                 )
-              : classes.isEmpty || subjectIds.isEmpty
-                  ? const Center(child: Text('कोणतेही वर्ग किंवा विषय नाहीत'))
-                  : Column(
+              : SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (selectedStudent == null && subjectIds.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: DropdownButton<String>(
-                                    value: selectedSubjectId,
-                                    items: subjectIds
-                                        .map((id) => DropdownMenuItem(value: id, child: Text(subjectIdToName[id] ?? 'Unknown')))
-                                        .toList(),
-                                    onChanged: (value) => setState(() => selectedSubjectId = value),
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.download),
-                                  onPressed: selectedSubjectId != null ? () => _exportAllStudentsResults(selectedSubjectId!) : null,
-                                ),
-                              ],
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                            child: DropdownButtonFormField<String>(
+                              value: _selectedClassId,
+                              decoration: const InputDecoration(
+                                labelText: 'Select Class',
+                                labelStyle: TextStyle(color: Colors.blueAccent),
+                                border: InputBorder.none,
+                              ),
+                              items: _classes.isEmpty
+                                  ? [
+                                      const DropdownMenuItem<String>(
+                                        value: null,
+                                        child: Text('No classes available'),
+                                        enabled: false,
+                                      ),
+                                    ]
+                                  : [
+                                      const DropdownMenuItem<String>(
+                                        value: null,
+                                        child: Text('All Classes'),
+                                      ),
+                                      ..._classes.map((classData) {
+                                        return DropdownMenuItem<String>(
+                                          value: classData['id'].toString(),
+                                          child: Text(classData['name']?.toString() ?? 'Unknown Class'),
+                                        );
+                                      }),
+                                    ],
+                              onChanged: _classes.isEmpty
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        _selectedClassId = value;
+                                        _filteredResults = [];
+                                        _errorMessage = null;
+                                        _filterResults();
+                                      });
+                                    },
                             ),
                           ),
-                        Expanded(
-                          child: selectedStudent == null
-                              ? ListView.builder(
-                                  itemCount: classes.length,
-                                  itemBuilder: (context, index) {
-                                    final classItem = classes[index];
-                                    final students = classStudents[classItem.id.toString()] ?? [];
-                                    return Card(
-                                      margin: const EdgeInsets.all(8),
-                                      child: ExpansionTile(
-                                        title: Text('वर्ग ${classItem.name}'),
-                                        subtitle: Text('${students.length} विद्यार्थी'),
-                                        children: students
-                                            .map((student) => ListTile(
-                                                  title: Text(student.name ?? 'अज्ञात'),
-                                                  subtitle: Text('रोल: ${student.rollNo ?? 'N/A'}'),
-                                                  trailing: IconButton(
-                                                    icon: const Icon(Icons.visibility),
-                                                    onPressed: () => _loadStudentResult(student),
-                                                  ),
-                                                ))
-                                            .toList(),
-                                      ),
-                                    );
-                                  },
-                                )
-                              : ListView(
-                                  padding: const EdgeInsets.all(8),
-                                  children: [
-                                    Card(
-                                      child: ListTile(
-                                        title: Text(selectedStudent!.name ?? 'अज्ञात'),
-                                        subtitle: Text('आयडी: ${selectedStudent!.enrollmentNo ?? '-'}'),
-                                        trailing: IconButton(
-                                          icon: const Icon(Icons.arrow_back),
-                                          onPressed: () => setState(() {
-                                            selectedStudent = null;
-                                            studentResult = null;
-                                          }),
-                                        ),
-                                      ),
-                                    ),
-                                    if (studentResult == null || studentResult!['semesterWise'].isEmpty)
-                                      const Card(child: ListTile(title: Text('निकाल उपलब्ध नाही')))
-                                    else
-                                      Card(
-                                        child: DataTable(
-                                          columns: const [
-                                            DataColumn(label: Text('सत्र')),
-                                            DataColumn(label: Text('विषय')),
-                                            DataColumn(label: Text('रचनात्मक')),
-                                            DataColumn(label: Text('संक्षेपात्मक')),
-                                            DataColumn(label: Text('एकूण')),
-                                            DataColumn(label: Text('श्रेणी')),
-                                            DataColumn(label: Text('क्रिया')),
-                                          ],
-                                          rows: Map<String, dynamic>.from(studentResult!['semesterWise'])
-                                              .entries
-                                              .expand((entry) => (entry.value['subjects'] as Map<String, dynamic>)
-                                                  .entries
-                                                  .map((s) => DataRow(cells: [
-                                                        DataCell(Text('सत्र ${entry.key}')),
-                                                        DataCell(Text(subjectIdToName[s.key] ?? '-')),
-                                                        DataCell(Text(s.value['formativeAssesment']?.toString() ?? '-')),
-                                                        DataCell(Text(s.value['summativeAssesment']?.toString() ?? '-')),
-                                                        DataCell(Text(s.value['total']?.toString() ?? '-')),
-                                                        DataCell(Text(s.value['grade']?.toString() ?? '-')),
-                                                        DataCell(IconButton(
-                                                          icon: const Icon(Icons.edit),
-                                                          onPressed: () => _editStudentResult(s.key, entry.key, s.value),
-                                                        )),
-                                                      ])))
-                                              .toList(),
-                                        ),
-                                      ),
-                                  ],
-                                ),
                         ),
+                        const SizedBox(height: 16),
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                            child: DropdownButtonFormField<String>(
+                              value: _selectedSemester,
+                              decoration: const InputDecoration(
+                                labelText: 'Select Semester',
+                                labelStyle: TextStyle(color: Colors.blueAccent),
+                                border: InputBorder.none,
+                              ),
+                              items: _semesters.map((semester) {
+                                return DropdownMenuItem<String>(
+                                  value: semester,
+                                  child: Text(semester == 'All' ? 'All Semesters' : 'Semester $semester'),
+                                );
+                              }).toList(),
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedSemester = value!;
+                                  _filteredResults = [];
+                                  _errorMessage = null;
+                                  _filterResults();
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          'Result Reports (${_filteredResults.length})',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        _filteredResults.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                                child: Center(
+                                  child: Text(
+                                    _errorMessage ?? 'No results found for the selected class and semester.',
+                                    style: const TextStyle(fontSize: 16, color: Colors.grey),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              )
+                            : SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  columnSpacing: 16,
+                                  columns: const [
+                                    DataColumn(label: Text('Student Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Roll No', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Class', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Semester', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Grade', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Percentage', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Special Progress', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Hobbies', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Areas of Improvement', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  ],
+                                  rows: _filteredResults.expand((result) {
+                                    final student = _students.firstWhere(
+                                      (s) => s['id'].toString() == result['studentId'].toString(),
+                                      orElse: () => {'name': 'Unknown', 'rollNo': 'N/A', 'classId': 'N/A'},
+                                    );
+                                    final classData = _classes.firstWhere(
+                                      (c) => c['id'].toString() == student['classId']?.toString(),
+                                      orElse: () => {'name': 'Unknown'},
+                                    );
+
+                                    final semesters = _selectedSemester == 'All' ? ['1', '2'] : [_selectedSemester];
+                                    return semesters.where((sem) => result['semesterWise']?[sem] != null).map((sem) {
+                                      final semesterData = result['semesterWise'][sem];
+                                      return DataRow(cells: [
+                                        DataCell(Text(student['name']?.toString() ?? 'Unknown')),
+                                        DataCell(Text(student['rollNo']?.toString() ?? 'N/A')),
+                                        DataCell(Text(classData['name']?.toString() ?? 'Unknown')),
+                                        DataCell(Text(sem == 'All' ? 'All Semesters' : 'Semester $sem')),
+                                        DataCell(Text(result['grandGrade']?.toString() ?? 'N/A')),
+                                        DataCell(Text(result['grandPercentage']?.toStringAsFixed(2) ?? '0.00')),
+                                        DataCell(Text(semesterData['specialProgress']?.toString() ?? 'N/A')),
+                                        DataCell(Text(semesterData['hobbies']?.toString() ?? 'N/A')),
+                                        DataCell(Text(semesterData['areasOfImprovement']?.toString() ?? 'N/A')),
+                                      ]);
+                                    });
+                                  }).toList(),
+                                ),
+                              ),
+                        const SizedBox(height: 16),
                       ],
                     ),
-      floatingActionButton: selectedStudent != null && studentResult != null && studentResult!['semesterWise'].isNotEmpty
-          ? FloatingActionButton(
-              onPressed: () => _exportToExcel(selectedStudent!),
-              child: const Icon(Icons.download),
-            )
-          : null,
+                  ),
+                ),
     );
   }
 }

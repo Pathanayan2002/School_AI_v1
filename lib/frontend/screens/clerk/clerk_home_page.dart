@@ -1,5 +1,7 @@
-import 'package:Ai_School_App/frontend/screens/teacher/result_report.dart';
+// File: clerk_home_page.dart
+import 'package:Ai_School_App/frontend/screens/admin/view_student_record.dart';
 import 'package:flutter/material.dart';
+import '../teacher/result_report.dart';
 import '../admin/admin_profile.dart';
 import '../admin/manage_classes.dart';
 import '../admin/manage_subject.dart';
@@ -21,61 +23,86 @@ class ClerkHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}";
+    final dateStr =
+        "${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}";
 
     final dashboardItems = [
-      _DashboardItem(Icons.person_search, 'Student Records', Colors.indigo, const StudentRecord()),
-      _DashboardItem(Icons.group, 'Teacher Attendance', Colors.orange, const TeacherAttendanceScreen()),
-      _DashboardItem(Icons.person_add_alt_1, 'Add Student', Colors.pink, const AddNewStudent()),
-      _DashboardItem(Icons.book, 'Assign Subject', Colors.green, const AssignSubjectToStudentPage()),
-      _DashboardItem(Icons.class_, 'Assign Class', Colors.teal, const AssignClassToTeacherPage()),
-      _DashboardItem(Icons.bar_chart, 'Result Report', Colors.purple, const ResultReportScreen()),
-      _DashboardItem(Icons.restaurant, 'Food Management', Colors.blue, const MDMHomePage()),
+      _DashboardItem(Icons.person_search, 'Student Attendance Records',
+          Colors.indigo, const ClerkAttendanceRecordPage()),
+      _DashboardItem(Icons.group, 'Teacher Attendance', Colors.orange,
+          const TeacherAttendanceScreen()),
+      _DashboardItem(Icons.person_add_alt_1, 'Add Student', Colors.pink,
+          const AddNewStudent()),
+      _DashboardItem(Icons.book, 'Assign Subject', Colors.green,
+          const AssignSubjectToStudentPage()),
+      _DashboardItem(Icons.class_, 'Assign Class', Colors.teal,
+          const AssignClassToTeacherPage()),
+      _DashboardItem(Icons.bar_chart, 'Result Report', Colors.purple,
+          const ClerkResultReportPage()),
+      _DashboardItem(Icons.school, 'View Student Record', Colors.deepPurple,
+          const AdminClerkStudentViewPage(initialClassId: null)),
+      _DashboardItem(Icons.restaurant, 'Food Management', Colors.blue,
+          const MDMHomePage()),
     ];
 
     final drawerItems = [
       _DrawerItem(Icons.person, 'Profile', const ProfilePage()),
       _DrawerItem(Icons.book, 'Assign Subject', const AssignSubjectToStudentPage()),
-      _DrawerItem(Icons.book_online, 'Teacher Record', const AttendanceRecordScreen()),
+      _DrawerItem(Icons.book_online, 'Teacher Record', const ClerkTeacherAttendanceRecordPage()),
       _DrawerItem(Icons.class_, 'Assign Class', const AssignClassToTeacherPage()),
       _DrawerItem(Icons.dashboard, 'Dashboard', ClerkHomePage(clerkId: clerkId)),
       _DrawerItem(Icons.security, 'Add Role', const RolePage()),
       _DrawerItem(Icons.class_outlined, 'Manage Classes', const ManageClassesWithDivision()),
       _DrawerItem(Icons.menu_book, 'Manage Subjects', const ManageSubjectsScreen()),
-      _DrawerItem(Icons.bar_chart, 'Result Report', const ClerkResultReportScreen()),
+      _DrawerItem(Icons.bar_chart, 'Result Report', const ClerkResultReportPage()),
     ];
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Clerk Dashboard', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Clerk Dashboard',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         centerTitle: true,
-        backgroundColor: Colors.blue.shade700,
+        elevation: 2,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.blue.shade800,
         actions: [
           IconButton(
-            icon: const Icon(Icons.account_circle),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage())),
+            icon: Icon(Icons.account_circle, size: 28, color: Colors.blue.shade800),
+            onPressed: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const ProfilePage())),
           ),
         ],
       ),
       drawer: _buildDrawer(context, drawerItems),
       body: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Welcome, Clerk!',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Color(0xFF1E6FE8))),
+            const Text(
+              'Welcome, Clerk ',
+              style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87),
+            ),
             const SizedBox(height: 8),
-            Text('Date: $dateStr', style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+            Text(
+              'Date: $dateStr',
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade700),
+            ),
             const SizedBox(height: 24),
             Expanded(
               child: GridView.builder(
                 itemCount: dashboardItems.length,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 1.15,
+                  crossAxisCount:
+                      MediaQuery.of(context).size.width > 600 ? 3 : 2,
+                  crossAxisSpacing: 18,
+                  mainAxisSpacing: 18,
+                  childAspectRatio: 1.1,
                 ),
                 itemBuilder: (context, index) {
                   return _DashboardCard(item: dashboardItems[index]);
@@ -93,12 +120,17 @@ class ClerkHomePage extends StatelessWidget {
       child: Column(
         children: [
           DrawerHeader(
-            decoration: BoxDecoration(color: Colors.blue.shade700),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade800,
+            ),
             child: Align(
               alignment: Alignment.bottomLeft,
               child: Text(
                 'Navigation Menu',
-                style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700),
               ),
             ),
           ),
@@ -106,15 +138,21 @@ class ClerkHomePage extends StatelessWidget {
             child: ListView.separated(
               padding: EdgeInsets.zero,
               itemCount: items.length,
-              separatorBuilder: (_, __) => const Divider(height: 0),
+              separatorBuilder: (_, __) =>
+                  Divider(height: 0, color: Colors.grey.shade300),
               itemBuilder: (context, index) {
                 final item = items[index];
                 return ListTile(
                   leading: Icon(item.icon, color: Colors.blue.shade700),
-                  title: Text(item.title, style: const TextStyle(fontSize: 16)),
+                  title: Text(
+                    item.title,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w500),
+                  ),
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => item.page));
+                    Navigator.push(
+                        context, MaterialPageRoute(builder: (_) => item.page));
                   },
                 );
               },
@@ -134,27 +172,28 @@ class _DashboardItem {
   _DashboardItem(this.icon, this.label, this.color, this.page);
 }
 
-  class _DashboardCard extends StatelessWidget {
+class _DashboardCard extends StatelessWidget {
   final _DashboardItem item;
   const _DashboardCard({required this.item});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => item.page)),
-      borderRadius: BorderRadius.circular(12),
-      splashColor: Colors.blue.withOpacity(0.1),
+      onTap: () =>
+          Navigator.push(context, MaterialPageRoute(builder: (_) => item.page)),
+      borderRadius: BorderRadius.circular(14),
       child: Card(
         elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        color: const Color(0xFFF5F7FA),
+        shadowColor: Colors.black12,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        color: Colors.white,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 18),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(item.icon, size: 38, color: Color(0xFF1E88E5)),
-              const SizedBox(height: 12),
+              Icon(item.icon, size: 40, color: item.color),
+              const SizedBox(height: 14),
               Text(
                 item.label,
                 textAlign: TextAlign.center,

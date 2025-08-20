@@ -1,3 +1,7 @@
+// File: admin_home_page.dart
+import 'package:Ai_School_App/frontend/screens/admin/view_student_record.dart';
+import 'package:Ai_School_App/frontend/screens/auth/login.dart';
+import 'package:Ai_School_App/frontend/screens/clerk/result_report.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -42,7 +46,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
       }
       final response = await _apiService.getUserById(userId);
       if (response['success'] != true || response['data']?['role'] != 'Admin') {
-        _redirectToLogin(response['message'] ?? 'Access denied: Admin role required');
+        _redirectToLogin(
+            response['message'] ?? 'Access denied: Admin role required');
       }
     } catch (e) {
       _redirectToLogin('Error checking authorization: $e');
@@ -50,7 +55,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
   }
 
   void _redirectToLogin(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
     if (mounted) Navigator.pushReplacementNamed(context, '/login');
   }
 
@@ -92,27 +98,84 @@ class _AdminHomePageState extends State<AdminHomePage> {
     }
   }
 
-  Future<void> _logout() async {
-    try {
-      final response = await _apiService.logout();
-      if (response['success']) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Logged out successfully')));
-        Navigator.pushReplacementNamed(context, '/login');
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Logout failed: ${response['message']}')));
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error during logout: $e')));
-    }
-  }
+ Future<void> _logout() async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Confirm Logout"),
+      content: const Text("Are you sure you want to log out?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            "Logout",
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
 
+  if (confirm != true) return;
+
+  try {
+    final result = await _apiService.logout();
+    debugPrint('Logout response: $result');
+
+    if (!mounted) return;
+
+    if (result['message']?.toString().toLowerCase().contains('successful') == true) {
+      await _storage.deleteAll();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Logged out successfully"),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Logout failed: ${result['message'] ?? 'Unknown error'}"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  } catch (e) {
+    debugPrint('Logout error: $e');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("Logout failed: $e"),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    await _storage.deleteAll();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginPage()),
+    );
+  }
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Admin Dashboard', style: GoogleFonts.poppins()),
+        title: Text('Admin Dashboard',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
+        elevation: 2,
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -121,131 +184,236 @@ class _AdminHomePageState extends State<AdminHomePage> {
           ),
         ],
       ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: const BoxDecoration(color: Colors.deepPurple),
-              child: Text('Admin Menu', style: GoogleFonts.poppins(color: Colors.white, fontSize: 24)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.person_add, color: Colors.deepPurple),
-              title: Text('Add New User', style: GoogleFonts.poppins()),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddNewUser())),
-            ),
-            ListTile(
-              leading: const Icon(Icons.manage_accounts, color: Colors.deepPurple),
-              title: Text('Manage Users', style: GoogleFonts.poppins()),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ManageUser())),
-            ),
-            ListTile(
-              leading: const Icon(Icons.subject, color: Colors.deepPurple),
-              title: Text('Manage Subjects', style: GoogleFonts.poppins()),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ManageSubjectsScreen())),
-            ),
-            ListTile(
-              leading: const Icon(Icons.class_, color: Colors.deepPurple),
-              title: Text('Manage Classes', style: GoogleFonts.poppins()),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ManageClassesWithDivision())),
-            ),
-            ListTile(
-              leading: const Icon(Icons.assignment, color: Colors.deepPurple),
-              title: Text('Assign Subjects & Classes', style: GoogleFonts.poppins()),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AssignClassAndSubjectPage())),
-            ),
-            ListTile(
-              leading: const Icon(Icons.list_alt, color: Colors.deepPurple),
-              title: Text('Assigned Subjects', style: GoogleFonts.poppins()),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AssignedSubjectTeacherPage())),
-            ),
-            ListTile(
-              leading: const Icon(Icons.security, color: Colors.deepPurple),
-              title: Text('Manage Roles', style: GoogleFonts.poppins()),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RolePage())),
-            ),
-            ListTile(
-              leading: const Icon(Icons.person, color: Colors.deepPurple),
-              title: Text('Profile', style: GoogleFonts.poppins()),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfilePage())),
-            ),
-          ],
-        ),
-      ),
+      drawer: _buildDrawer(),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(_errorMessage!, style: GoogleFonts.poppins(color: Colors.red, fontSize: 16)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _fetchClasses,
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white),
-                        child: Text('Retry', style: GoogleFonts.poppins()),
-                      ),
-                    ],
-                  ),
-                )
+              ? _buildErrorState()
               : classes.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('No classes found.', style: GoogleFonts.poppins(fontSize: 18, color: Colors.grey)),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ManageClassesWithDivision())),
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white),
-                            child: Text('Add Class', style: GoogleFonts.poppins()),
-                          ),
-                        ],
-                      ),
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: ListView(
-                        children: [
-                          Text('Welcome, Admin!', style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          Text('Manage classes, users, and subjects below.', style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)),
-                          const SizedBox(height: 16),
-                          ...classes.map((cls) => _buildClassCard(cls)).toList(),
-                        ],
-                      ),
-                    ),
+                  ? _buildEmptyState()
+                  : _buildDashboard(),
     );
   }
 
+  Drawer _buildDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(color: Colors.deepPurple),
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: Text('Admin Menu',
+                  style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600)),
+            ),
+          ),
+          _drawerItem(Icons.person_add, 'Add New User', const AddNewUser()),
+          _drawerItem(Icons.manage_accounts, 'Manage Users', const ManageUser()),
+          _drawerItem(Icons.subject, 'Manage Subjects',
+              const ManageSubjectsScreen()),
+          _drawerItem(
+              Icons.class_, 'Manage Classes', const ManageClassesWithDivision()),
+          _drawerItem(Icons.assignment, 'Assign Subjects & Classes',
+              const AssignClassAndSubjectPage()),
+          _drawerItem(Icons.list_alt, 'Assigned Subjects',
+              const AssignedSubjectTeacherPage()),
+          _drawerItem(Icons.security, 'Manage Roles', const RolePage()),
+          _drawerItem(Icons.person, 'Profile', const ProfilePage()),
+          _drawerItem(Icons.school, 'View Student Record',
+              const AdminClerkStudentViewPage(initialClassId: null)),
+          _drawerItem(Icons.bar_chart, 'Student Result Record',
+              const ClerkResultReportPage()),
+        ],
+      ),
+    );
+  }
+
+  Widget _drawerItem(IconData icon, String title, Widget page) {
+    return ListTile(
+      leading: Icon(icon, color: Colors.deepPurple),
+      title: Text(title,
+          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w500)),
+      onTap: () {
+        Navigator.pop(context);
+        Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+      },
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(_errorMessage!,
+              style: GoogleFonts.poppins(color: Colors.red, fontSize: 16)),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _fetchClasses,
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white),
+            child: Text('Retry', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('No classes found.',
+              style: GoogleFonts.poppins(fontSize: 18, color: Colors.grey)),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const ManageClassesWithDivision())),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
+                foregroundColor: Colors.white),
+            child: Text('Add Class', style: GoogleFonts.poppins()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Dashboard with summary + class cards
+  Widget _buildDashboard() {
+    final totalClasses = classes.length;
+    final totalTeachers = classes.fold<int>(
+      0,
+      (sum, cls) => sum + ((cls['teachers'] as List?)?.length ?? 0),
+    );
+    final totalStudents = classes.fold<int>(
+      0,
+      (sum, cls) => sum + ((cls['students'] as List?)?.length ?? 0),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: ListView(
+        children: [
+          Text('Welcome, Admin!',
+              style: GoogleFonts.poppins(
+                  fontSize: 22, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Text('Manage classes, users, and subjects below.',
+              style: GoogleFonts.poppins(fontSize: 15, color: Colors.grey)),
+          const SizedBox(height: 16),
+
+          // Summary Row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildSummaryCard("Classes", totalClasses, Icons.class_),
+              _buildSummaryCard("Teachers", totalTeachers, Icons.person),
+              _buildSummaryCard("Students", totalStudents, Icons.school),
+            ],
+          ),
+
+          const SizedBox(height: 20),
+
+          // Class cards with expandable details
+          ...classes.map((cls) => _buildClassCard(cls)).toList(),
+        ],
+      ),
+    );
+  }
+
+  /// Small summary cards
+  Widget _buildSummaryCard(String title, int count, IconData icon) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 3,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        width: 100,
+        child: Column(
+          children: [
+            Icon(icon, color: Colors.deepPurple, size: 28),
+            const SizedBox(height: 6),
+            Text("$count",
+                style: GoogleFonts.poppins(
+                    fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(title,
+                style: GoogleFonts.poppins(
+                    fontSize: 13, color: Colors.grey[700])),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Class cards with expandable dropdown
   Widget _buildClassCard(Map<String, dynamic> cls) {
     final List<dynamic> teachers = cls['teachers'] ?? [];
     final List<dynamic> students = cls['students'] ?? [];
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 4,
+      child: ExpansionTile(
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        childrenPadding: const EdgeInsets.all(16),
+        title: Text(
+          cls['name'] ?? 'Class',
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Colors.deepPurple,
+          ),
+        ),
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(cls['name'] ?? 'Class', style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Text('Teachers', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
-            if (teachers.isNotEmpty)
-              ...teachers.map((t) => _buildListItem('${t['name']} (${t['email']})'))
-            else
-              _buildListItem('No teachers assigned.'),
-            const SizedBox(height: 8),
-            Text('Students', style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
-            if (students.isNotEmpty)
-              ...students.map((s) => _buildListItem('${s['name']} (Roll: ${s['rollNo']})'))
-            else
-              _buildListItem('No students assigned.'),
+            Text("👨‍🏫 ${teachers.length}",
+                style: GoogleFonts.poppins(
+                    fontSize: 13, fontWeight: FontWeight.w600)),
+            Text("👩‍🎓 ${students.length}",
+                style: GoogleFonts.poppins(
+                    fontSize: 13, fontWeight: FontWeight.w600)),
           ],
         ),
+        children: [
+          // Teacher list
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Teachers',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600, color: Colors.black87)),
+          ),
+          const SizedBox(height: 4),
+          if (teachers.isNotEmpty)
+            ...teachers
+                .map((t) => _buildListItem('${t['name']} (${t['email']})'))
+          else
+            _buildListItem('No teachers assigned.'),
+
+          const SizedBox(height: 12),
+
+          // Student list
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Students',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600, color: Colors.black87)),
+          ),
+          const SizedBox(height: 4),
+          if (students.isNotEmpty)
+            ...students.map(
+                (s) => _buildListItem('${s['name']} (Roll: ${s['rollNo']})'))
+          else
+            _buildListItem('No students assigned.'),
+        ],
       ),
     );
   }
@@ -257,7 +425,8 @@ class _AdminHomePageState extends State<AdminHomePage> {
         children: [
           const Icon(Icons.circle, size: 6, color: Colors.deepPurple),
           const SizedBox(width: 8),
-          Expanded(child: Text(content, style: GoogleFonts.poppins())),
+          Expanded(
+              child: Text(content, style: GoogleFonts.poppins(fontSize: 14))),
         ],
       ),
     );

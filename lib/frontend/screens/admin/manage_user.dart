@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
 import '../services/api_client.dart';
 import 'add_new_user.dart';
 
@@ -11,6 +10,7 @@ class ManageUser extends StatefulWidget {
   @override
   State<ManageUser> createState() => _ManageUserState();
 }
+
 class _ManageUserState extends State<ManageUser> {
   final ApiService _apiService = ApiService();
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -163,83 +163,82 @@ class _ManageUserState extends State<ManageUser> {
     );
   }
 
- void _changePassword(dynamic user) {
-  final userId = user['id']?.toString();
-  final passwordController = TextEditingController();
-  final parentContext = context;
+  void _changePassword(dynamic user) {
+    final userId = user['id']?.toString();
+    final passwordController = TextEditingController();
+    final parentContext = context;
 
-  if (userId == null) {
-    ScaffoldMessenger.of(parentContext).showSnackBar(
-      const SnackBar(content: Text('Invalid user ID')),
-    );
-    return;
-  }
+    if (userId == null) {
+      ScaffoldMessenger.of(parentContext).showSnackBar(
+        const SnackBar(content: Text('Invalid user ID')),
+      );
+      return;
+    }
 
-  showDialog(
-    context: parentContext,
-    builder: (dialogContext) {
-      return AlertDialog(
-        title: Text(
-          'Change Password',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        content: TextField(
-          controller: passwordController,
-          obscureText: true,
-          decoration: const InputDecoration(labelText: 'New Password'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+    showDialog(
+      context: parentContext,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(
+            'Change Password',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
           ),
-          ElevatedButton(
-            onPressed: () async {
-              final newPassword = passwordController.text.trim();
-              if (newPassword.isEmpty) {
-                ScaffoldMessenger.of(parentContext).showSnackBar(
-                  const SnackBar(content: Text('Password cannot be empty')),
-                );
-                return;
-              }
-
-              Navigator.of(dialogContext).pop();
-
-              try {
-                final result = await _apiService.putRequest(
-                  '/user/update/$userId',
-                  data: {
-                    'name': user['name'],
-                    'email': user['email'],
-                    'role': user['role'],
-                    'schoolId': user['schoolId'],
-                    'password': newPassword,
-                  },
-                );
-
-                // ✅ Check for success by seeing if an 'id' or updated data exists
-                if (result != null && (result['id'] != null || result['data'] != null)) {
+          content: TextField(
+            controller: passwordController,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'New Password'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newPassword = passwordController.text.trim();
+                if (newPassword.isEmpty) {
                   ScaffoldMessenger.of(parentContext).showSnackBar(
-                    const SnackBar(content: Text('Password updated successfully')),
+                    const SnackBar(content: Text('Password cannot be empty')),
                   );
-                } else {
+                  return;
+                }
+
+                Navigator.of(dialogContext).pop();
+
+                try {
+                  final result = await _apiService.putRequest(
+                    '/user/update/$userId',
+                    data: {
+                      'name': user['name'],
+                      'email': user['email'],
+                      'role': user['role'],
+                      'schoolId': user['schoolId'],
+                      'password': newPassword,
+                    },
+                  );
+
+                  if (result != null && (result['id'] != null || result['data'] != null)) {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      const SnackBar(content: Text('Password updated successfully')),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(content: Text('Failed to update password')),
+                    );
+                  }
+                } catch (e) {
                   ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(content: Text('Failed to update password')),
+                    SnackBar(content: Text('Error changing password: $e')),
                   );
                 }
-              } catch (e) {
-                ScaffoldMessenger.of(parentContext).showSnackBar(
-                  SnackBar(content: Text('Error changing password: $e')),
-                );
-              }
-            },
-            child: const Text('Update'),
-          ),
-        ],
-      );
-    },
-  );
-}
+              },
+              child: const Text('Update'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   void _onSearchChanged(String query) {
     setState(() => searchQuery = query.toLowerCase());
@@ -253,119 +252,101 @@ class _ManageUserState extends State<ManageUser> {
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: ThemeData(
-        primarySwatch: Colors.deepPurple,
-        textTheme: GoogleFonts.poppinsTextTheme(),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Manage Users'),
+        centerTitle: true,
+        backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
       ),
-      child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF4A00E0), Color(0xFF8E2DE2)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              controller: searchController,
+              decoration: InputDecoration(
+                hintText: 'Search users...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.grey[100],
+              ),
             ),
           ),
-          child: SafeArea(
-            child: Column(
-              children: [
-                AppBar(
-                  title: const Text('Manage Users'),
-                  centerTitle: true,
-                  backgroundColor: Colors.transparent,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: TextField(
-                    controller: searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search users...',
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      filled: true,
-                      fillColor: Colors.white,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _isLoading
-                        ? const Center(child: CircularProgressIndicator(color: Colors.white))
-                        : filteredUsers.isEmpty
-                            ? Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.people_outline, size: 60, color: Colors.grey),
-                                  const SizedBox(height: 12),
-                                  Text('No users found',
-                                      style: GoogleFonts.poppins(fontSize: 16, color: Colors.white)),
-                                ],
-                              )
-                            : ListView.builder(
-                                itemCount: filteredUsers.length,
-                                itemBuilder: (context, index) {
-                                  final user = filteredUsers[index];
-                                  return Card(
-                                    elevation: 5,
-                                    margin: const EdgeInsets.symmetric(vertical: 8),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                    child: ListTile(
-                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                      leading: CircleAvatar(
-                                        backgroundColor: Colors.deepPurple[200],
-                                        child: Text(
-                                          user['name']?.toString().isNotEmpty == true
-                                              ? user['name'][0].toUpperCase()
-                                              : '?',
-                                          style: const TextStyle(color: Colors.white),
-                                        ),
-                                      ),
-                                      title: Text(user['name']?.toString() ?? 'No Name'),
-                                      subtitle: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text('Email: ${user['email'] ?? 'N/A'}'),
-                                          Text('Enrollment ID: ${user['enrollmentId'] ?? 'N/A'}'),
-                                          Text('Role: ${user['role'] ?? 'N/A'}'),
-                                        ],
-                                      ),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.edit, color: Colors.blue),
-                                            onPressed: () {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                    builder: (_) => AddNewUser(userData: user)),
-                                              ).then((_) => _fetchUsers());
-                                            },
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.lock, color: Colors.orange),
-                                            onPressed: () => _changePassword(user),
-                                          ),
-                                          IconButton(
-                                            icon: const Icon(Icons.delete, color: Colors.red),
-                                            onPressed: () => _confirmDeleteUser(user),
-                                          ),
-                                        ],
-                                      ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filteredUsers.isEmpty
+                      ? Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.people_outline, size: 60, color: Colors.grey),
+                            const SizedBox(height: 12),
+                            Text('No users found',
+                                style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey)),
+                          ],
+                        )
+                      : ListView.builder(
+                          itemCount: filteredUsers.length,
+                          itemBuilder: (context, index) {
+                            final user = filteredUsers[index];
+                            return Card(
+                              elevation: 2,
+                              margin: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                leading: CircleAvatar(
+                                  backgroundColor: Colors.deepPurple[200],
+                                  child: Text(
+                                    user['name']?.toString().isNotEmpty == true
+                                        ? user['name'][0].toUpperCase()
+                                        : '?',
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                                title: Text(user['name']?.toString() ?? 'No Name'),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Email: ${user['email'] ?? 'N/A'}'),
+                                    Text('Enrollment ID: ${user['enrollmentId'] ?? 'N/A'}'),
+                                    Text('Role: ${user['role'] ?? 'N/A'}'),
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit, color: Colors.blue),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                              builder: (_) => AddNewUser(userData: user)),
+                                        ).then((_) => _fetchUsers());
+                                      },
                                     ),
-                                  );
-                                },
+                                    IconButton(
+                                      icon: const Icon(Icons.lock, color: Colors.orange),
+                                      onPressed: () => _changePassword(user),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      onPressed: () => _confirmDeleteUser(user),
+                                    ),
+                                  ],
+                                ),
                               ),
-                  ),
-                ),
-              ],
+                            );
+                          },
+                        ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

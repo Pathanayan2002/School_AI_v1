@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import '../services/api_client.dart';
 import '../admin/admin_home_page.dart';
@@ -38,8 +37,7 @@ class _LoginPageState extends State<LoginPage> {
       final userId = await _storage.read(key: 'user_id');
       if (role != null && userId != null) {
         if (!mounted) return;
-        // Verify role to prevent incorrect navigation
-        if (['Admin',  'Teacher', 'Clerk'].contains(role)) {
+        if (['Admin', 'Teacher', 'Clerk'].contains(role)) {
           _navigateToDashboard(role, userId);
         }
       }
@@ -98,14 +96,12 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
 
-        // Store token and user data
         await _storage.write(key: 'token', value: token);
         await _storage.write(key: 'user_role', value: userRole);
         await _storage.write(key: 'user_id', value: userId);
         await _storage.write(key: 'school_id', value: schoolId ?? '');
         await _storage.write(key: 'enrollment_id', value: enrollmentId);
 
-        // Verify role before navigating
         if (['Admin', 'SuperAdmin', 'Teacher', 'Clerk', 'MDM'].contains(userRole)) {
           _navigateToDashboard(userRole, userId);
         } else {
@@ -160,27 +156,33 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildTextField({
     required TextEditingController controller,
-    required String hint,
+    required String label,
     required IconData icon,
     bool obscureText = false,
     Widget? suffixIcon,
   }) {
-    return TextField(
+    return TextFormField(
       controller: controller,
       obscureText: obscureText,
-      style: GoogleFonts.poppins(color: Colors.white),
       decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: GoogleFonts.poppins(color: Colors.white70),
-        prefixIcon: Icon(icon, color: Colors.white70),
+        labelText: label,
+        prefixIcon: Icon(icon, color: Colors.grey[600]),
         suffixIcon: suffixIcon,
         filled: true,
-        fillColor: Colors.white.withOpacity(0.1),
+        fillColor: Colors.grey[100],
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide.none,
         ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey[300]!, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF6200EA), width: 2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
       ),
     );
   }
@@ -188,99 +190,114 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF4A00E0),
+      backgroundColor: Colors.grey[50],
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 50),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Login to School AI',
-                  style: GoogleFonts.poppins(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 40),
-                _buildTextField(
-                  controller: _enrollmentController,
-                  hint: 'Enter Enrollment ID',
-                  icon: Icons.person,
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Password:',
-                  style: GoogleFonts.poppins(color: Colors.white),
-                ),
-                const SizedBox(height: 8),
-                _buildTextField(
-                  controller: _passwordController,
-                  hint: 'Enter Password',
-                  icon: Icons.lock,
-                  obscureText: _obscurePassword,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                      color: Colors.grey,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'School AI',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6200EA),
                     ),
-                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    textAlign: TextAlign.center,
                   ),
-                ),
-                const SizedBox(height: 20),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const ForgotPasswordPage()),
-                      );
-                    },
-                    child: Text(
-                      'Forgot Password?',
-                      style: GoogleFonts.poppins(color: Colors.white70),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Sign in to continue',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey[600],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 32),
+                  _buildTextField(
+                    controller: _enrollmentController,
+                    label: 'Enrollment ID',
+                    icon: Icons.person_outline,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildTextField(
+                    controller: _passwordController,
+                    label: 'Password',
+                    icon: Icons.lock_outline,
+                    obscureText: _obscurePassword,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                        color: Colors.grey[600],
+                      ),
+                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
-                ),
-                const SizedBox(height: 30),
-                if (_errorMessage != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
-                    child: Text(
-                      _errorMessage!,
-                      style: GoogleFonts.poppins(color: Colors.redAccent, fontSize: 14),
-                      textAlign: TextAlign.center,
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const ForgotPasswordPage()),
+                        );
+                      },
+                      child: const Text(
+                        'Forgot Password?',
+                        style: TextStyle(color: Color(0xFF6200EA)),
+                      ),
                     ),
                   ),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
+                  const SizedBox(height: 16),
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ElevatedButton(
                     onPressed: _isLoading ? null : _handleLogin,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF4A00E0),
-                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      backgroundColor: const Color(0xFF6200EA),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      elevation: 6,
+                      elevation: 2,
                     ),
                     child: _isLoading
-                        ? const CircularProgressIndicator(color: Color(0xFF4A00E0))
-                        : Text(
+                        ? const SizedBox(
+                            height: 24,
+                            width: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
                             'Sign In',
-                            style: GoogleFonts.poppins(
-                              color: const Color(0xFF4A00E0),
-                              fontWeight: FontWeight.bold,
+                            style: TextStyle(
                               fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

@@ -1,11 +1,11 @@
 class Student {
-  final int id;
+  final String id;
   final String name;
-  final String? enrollmentNo; // nullable if backend may send null
+  final String? enrollmentNo;
   final String studentClass;
   final int? rollNo;
-  final DateTime? dob; // optional date field
-  final DateTime? admissionDate; // optional date field
+  final DateTime? dob;
+  final DateTime? admissionDate;
 
   Student({
     required this.id,
@@ -19,35 +19,29 @@ class Student {
 
   factory Student.fromJson(Map<String, dynamic> json) {
     print('Parsing student JSON: $json');
-
-    // Ignore API error responses
     if (json['message'] != null) {
       print('Unexpected message in JSON: $json');
       throw FormatException('Invalid student data: contains message field');
     }
 
-    // Parse ID
-    final id = int.tryParse(json['id']?.toString() ?? '');
-    if (id == null || id == 0) {
+    final id = json['id']?.toString();
+    if (id == null || id.isEmpty) {
       print('Invalid student ID in JSON: $json');
       throw FormatException('Invalid or missing student ID');
     }
 
-    // Parse required name
     final name = json['name']?.toString().trim() ?? '';
     if (name.isEmpty) {
       print('Invalid student data in JSON: $json');
       throw FormatException('Missing name');
     }
 
-    // Parse optional fields
     final enrollmentNo = json['registerNumber']?.toString().trim();
     final studentClass = json['classId']?.toString() ?? 'N/A';
     final rollNo = json['rollNo'] != null
         ? int.tryParse(json['rollNo'].toString())
         : null;
 
-    // Parse date fields safely
     DateTime? parseDate(dynamic value) {
       if (value == null) return null;
       try {
@@ -68,7 +62,7 @@ class Student {
     );
   }
 
-  get classId => null;
+  String get classId => studentClass;
 
   Map<String, dynamic> toJson() {
     String? formatDate(DateTime? date) =>

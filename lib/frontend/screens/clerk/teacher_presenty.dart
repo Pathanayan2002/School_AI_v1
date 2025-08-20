@@ -46,13 +46,13 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   bool isSubmitting = false;
   final TextEditingController _totalDaysController = TextEditingController();
   final TextEditingController _presentDaysController = TextEditingController();
+  String? schoolId;
 
   @override
   void initState() {
     super.initState();
     _checkAuthorization();
     _initMonthList();
-    loadTeachers();
   }
 
   Future<void> _checkAuthorization() async {
@@ -65,9 +65,20 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       return;
     }
     final response = await _apiService.getUserById(userId);
-    if (!response['success'] || response['data']['role'] != 'Clerk') {
+    if (response['success'] && response['data'] != null) {
+      final role = response['data']['role']?.toLowerCase();
+      schoolId = response['data']['schoolId']?.toString();
+      if (role != 'clerk') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Access denied: Only Clerks can manage attendance')),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+      } else {
+        loadTeachers();
+      }
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Access denied: Only Clerks can manage attendance')),
+        const SnackBar(content: Text('Failed to load user data')),
       );
       Navigator.pushReplacementNamed(context, '/login');
     }
@@ -88,7 +99,10 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     });
 
     try {
-      final res = await _apiService.getAllUsers(schoolId: '');
+      if (schoolId == null) {
+        throw Exception('School ID not found');
+      }
+      final res = await _apiService.getAllUsers(schoolId: schoolId!);
       if (res['success'] && res['data'] is List) {
         setState(() {
           teachers = List<dynamic>.from(res['data'])

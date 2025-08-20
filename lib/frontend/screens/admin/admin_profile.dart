@@ -1,6 +1,6 @@
 import 'package:Ai_School_App/frontend/screens/auth/login.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart'; // Ensured
+import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../services/api_client.dart';
 
@@ -25,6 +25,7 @@ class _ProfilePageState extends State<ProfilePage> {
     super.initState();
     _fetchUserProfile();
   }
+
   Future<void> _fetchUserProfile() async {
     try {
       final enrollId = await _storage.read(key: 'enrollment_id');
@@ -37,7 +38,7 @@ class _ProfilePageState extends State<ProfilePage> {
         return;
       }
 
-      final response = await _apiService.getRequest('/user/All',);
+      final response = await _apiService.getRequest('/user/All');
 
       if (response['success'] == true && response['data'] is List) {
         final List<dynamic> allUsers = response['data'];
@@ -64,7 +65,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-Future<void> _logout() async {
+  Future<void> _logout() async {
   final confirm = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -75,14 +76,13 @@ Future<void> _logout() async {
           onPressed: () => Navigator.of(context).pop(false),
           child: const Text("Cancel"),
         ),
-       TextButton(
-  onPressed: () => Navigator.of(context).pop(true),
-  child: const Text(
-    "Logout",
-    style: TextStyle(color: Colors.white),
-  ),
-),
-
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            "Logout",
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
       ],
     ),
   );
@@ -99,44 +99,45 @@ Future<void> _logout() async {
 
     if (!mounted) return;
 
-    if (result['success'] == true) {
+    // Check for successful logout based on message or absence of error
+    if (result['message']?.toString().toLowerCase().contains('successful') == true) {
+      // Clear secure storage
+      await _storage.deleteAll();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result['message'] ?? "Logged out successfully"),
+        const SnackBar(
+          content: Text("Logged out successfully"),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
         ),
       );
-      await Future.delayed(const Duration(seconds: 2));
-      if (mounted) {
-        // Replace the current route with LoginPage
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginPage()),
-        );
-      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+      );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Logout failed: ${result['message'] ?? 'Unknown error'}"),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
         ),
       );
     }
   } catch (e) {
     debugPrint('Logout error: $e');
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text("Logout failed: $e"),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
       ),
+    );
+    // Fallback: Clear storage and navigate to login
+    await _storage.deleteAll();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginPage()),
     );
   } finally {
     if (mounted) {
@@ -146,8 +147,9 @@ Future<void> _logout() async {
     }
   }
 }
-
- void _showErrorDialog(String message) {
+ 
+ 
+  void _showErrorDialog(String message) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         showDialog(
@@ -223,22 +225,10 @@ Future<void> _logout() async {
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
                 child: Column(
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.deepPurple.withOpacity(0.3),
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                          )
-                        ],
-                      ),
-                      child: const CircleAvatar(
-                        radius: 60,
-                        backgroundColor: Colors.deepPurple,
-                        child: Icon(Icons.person, size: 70, color: Colors.white),
-                      ),
+                    const CircleAvatar(
+                      radius: 60,
+                      backgroundColor: Colors.deepPurple,
+                      child: Icon(Icons.person, size: 70, color: Colors.white),
                     ),
                     const SizedBox(height: 20),
                     Text(
@@ -262,7 +252,7 @@ Future<void> _logout() async {
                     Card(
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
-                      elevation: 5,
+                      elevation: 2,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
                         child: Column(
@@ -280,7 +270,7 @@ Future<void> _logout() async {
                     const SizedBox(height: 40),
                     ElevatedButton.icon(
                       onPressed: _isLoggingOut ? null : _logout,
-                      icon: _isLoggingOut
+                      icon: _isLoading
                           ? const SizedBox(
                               width: 20,
                               height: 20,

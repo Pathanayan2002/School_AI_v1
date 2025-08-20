@@ -35,10 +35,9 @@ class _AssignedSubjectTeacherPageState
     });
 
     try {
-      final teacherResult = await _apiService.getAllUsers(schoolId: ''); // pass the school ID if needed
-      final subjectResult = await _apiService.getAllSubjects(schoolId: ''); // pass the school ID if needed
+      final teacherResult = await _apiService.getAllUsers(schoolId: '');
+      final subjectResult = await _apiService.getAllSubjects(schoolId: '');
 
-      // ✅ Build teachers list
       _teachers = _extractList(teacherResult)
           .where((u) => u['role']?.toString().toLowerCase() == 'teacher')
           .map((u) {
@@ -46,14 +45,12 @@ class _AssignedSubjectTeacherPageState
         return u;
       }).toList();
 
-      // ✅ Build subjects
       _subjects = _extractList(subjectResult).map((s) {
         s['id'] = (s['_id'] ?? s['id']).toString();
         s['teacherId'] = (s['teacherId'] ?? '').toString();
         return s;
       }).toList();
 
-      // ✅ Build teacher-subject mapping
       _teacherSubjects.clear();
       for (var subject in _subjects) {
         final teacherId = subject['teacherId'].toString();
@@ -88,7 +85,6 @@ class _AssignedSubjectTeacherPageState
 
   Future<void> _removeSubjectFromTeacher(String teacherId, String subjectId) async {
     try {
-      // Call the API to remove the subject from the teacher
       final res = await _apiService.removeSubjectFromTeacher(
         teacherId: teacherId,
         subjectId: subjectId,

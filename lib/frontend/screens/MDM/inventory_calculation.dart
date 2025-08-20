@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:intl/intl.dart';
 import '../services/api_client.dart';
 
@@ -8,214 +9,273 @@ class InventoryCalculationDialog extends StatefulWidget {
   final List<Map<String, dynamic>> menus;
 
   const InventoryCalculationDialog({
+    super.key,
     required this.onSubmit,
     required this.classGroups,
     required this.menus,
-    super.key,
   });
 
   @override
-  _InventoryCalculationDialogState createState() => _InventoryCalculationDialogState();
+  State<InventoryCalculationDialog> createState() => _InventoryCalculationDialogState();
 }
 
 class _InventoryCalculationDialogState extends State<InventoryCalculationDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _apiService = ApiService();
-  DateTime? date;
-  int? totalStudents;
-  String? classGroup;
-  String? menuId;
-  String? className;
-  List<Map<String, dynamic>> itemsUsed = [];
+  final ApiService _apiService = ApiService();
+  Map<String, dynamic>? selectedMenu;
+  String? selectedClassGroup;
+  final _classNameController = TextEditingController();
+  final _totalStudentsController = TextEditingController();
+  bool isLoading = false;
+  String? errorMessage;
 
-  void _calculateRequiredQuantities(Map<String, dynamic> selectedMenu) {
-    final selectedClassGroup = classGroup;
-    if (selectedClassGroup == null || totalStudents == null) return;
-
-    final items = selectedMenu['Items'] as List<dynamic>? ?? [];
-    itemsUsed = items.map<Map<String, dynamic>>((item) {
-      final quantityPerStudent = selectedClassGroup == '1-5'
-          ? (item['quantity1_5'] ?? 0.0)
-          : (item['quantity6_8'] ?? 0.0);
-      return {
-        'itemId': item['id'],
-        'itemName': item['itemName'],
-        'requiredQuantity': quantityPerStudent * totalStudents!,
-      };
-    }).toList();
+  @override
+  void initState() {
+    super.initState();
+    if (widget.menus.isNotEmpty) {
+      selectedMenu = widget.menus.first;
+    }
+    if (widget.classGroups.isNotEmpty) {
+      selectedClassGroup = widget.classGroups.first;
+    }
   }
+
+  @override
+  void dispose() {
+    _classNameController.dispose();
+    _totalStudentsController.dispose();
+    super.dispose();
+  }
+
+ Future<void> _submitReport() async {
+  if (!_formKey.currentState!.validate() || selectedMenu == null || selectedClassGroup == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Please fill all fields correctly')),
+    );
+    return;
+  }
+
+  setState(() {
+    isLoading = true;
+    errorMessage = null;
+  });
+
+  try {
+    if (kDebugMode) {
+      debugPrint('Submitting report with: menu=${selectedMenu?['dishName']}, '
+          'classGroup=$selectedClassGroup, className=${_classNameController.text}, '
+          'totalStudents=${_totalStudentsController.text}');
+    }
+
+    // Fetch stock data for validation
+    final stocksData = await _apiService.getAllStocks();
+    if (!stocksData['success']) {
+      throw Exception(stocksData['message'] ?? 'Failed to fetch stock data');
+    }
+    final stocks = List<Map<String, dynamic>>.from(stocksData['data'] ?? []);
+    final totalStudents = int.parse(_totalStudentsController.text);
+    final menuItems = (selectedMenu!['Items'] as List<dynamic>?) ?? [];
+
+    if (menuItems.isEmpty) {
+      throw Exception('Selected menu has no items assigned');
+    }
+
+    // Validate stock availability
+    for (final item in menuItems) {
+      final itemId = item['id']?.toString();
+      final itemName = item['itemName']?.toString() ?? 'Unknown';
+      final qtyPerStudent = selectedClassGroup == '1-5' ? item['quantity1_5'] : item['quantity6_8'];
+      if (qtyPerStudent == null || qtyPerStudent <= 0) {
+        throw Exception('Invalid quantity for $itemName in group $selectedClassGroup');
+      }
+      final requiredQty = qtyPerStudent * totalStudents;
+
+      final matchingStock = stocks.firstWhere(
+        (s) => s['ItemId']?.toString() == itemId && s['classGroup'] == selectedClassGroup,
+        orElse: () => {},
+      );
+
+      if (matchingStock.isEmpty) {
+        throw Exception('Stock not found for $itemName in group $selectedClassGroup. Please add stock first.');
+      }
+
+      final totalStock = (matchingStock['totalStock'] is num
+              ? (matchingStock['totalStock'] as num).toDouble()
+              : double.tryParse(matchingStock['totalStock']?.toString() ?? '0')) ??
+          0.0;
+
+      if (totalStock < requiredQty) {
+        throw Exception(
+            'Insufficient stock for $itemName in group $selectedClassGroup. Available: $totalStock, Required: $requiredQty');
+      }
+    }
+
+    // ✅ Properly send report data
+    final today = DateFormat('dd-mm-yyyy').format(DateTime.now());
+    final reportData = {
+      'date': today,
+      'menuId': selectedMenu!['id'].toString(),
+      'totalStudents': totalStudents,
+      'className': _classNameController.text.trim(),
+    };
+
+    if (kDebugMode) debugPrint('Report payload: $reportData');
+
+  final reportResponse = await _apiService.createReport(
+  date: today,
+  menuId: selectedMenu!['id'], 
+  totalStudent: totalStudents,
+  className: _classNameController.text.trim(),
+);
+
+
+    if (reportResponse['success']) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Report created successfully')),
+      );
+      widget.onSubmit({
+        ...reportData,
+        'itemsUsed': reportResponse['data']['report']?['itemsUsed'] ?? [],
+        'classGroup': reportResponse['data']['report']?['classGroup'] ?? selectedClassGroup,
+        'Menu': {'dishName': reportResponse['data']['MenuName'] ?? selectedMenu!['dishName']},
+      });
+      Navigator.pop(context);
+    } else {
+      throw Exception(reportResponse['message'] ?? 'Failed to create report');
+    }
+  } catch (e) {
+    if (kDebugMode) debugPrint('Report creation error: $e');
+    setState(() => errorMessage = e.toString());
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error: $errorMessage')),
+    );
+  } finally {
+    setState(() => isLoading = false);
+  }
+}
+
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Calculate Inventory'),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: Text(
-                  date == null ? 'Select Date' : 'Date: ${DateFormat('dd-MM-yyyy').format(date!)}',
+      title: const Text('Create Inventory Report'),
+      content: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          errorMessage!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    DropdownButtonFormField<Map<String, dynamic>>(
+                      decoration: const InputDecoration(
+                        labelText: 'Select Menu',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: selectedMenu,
+                      items: widget.menus.isEmpty
+                          ? [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('No menus available'),
+                                enabled: false,
+                              ),
+                            ]
+                          : widget.menus
+                              .map((m) => DropdownMenuItem(
+                                    value: m,
+                                    child: Text(m['dishName']?.toString() ?? 'Unknown'),
+                                  ))
+                              .toList(),
+                      onChanged: widget.menus.isEmpty
+                          ? null
+                          : (value) {
+                              setState(() => selectedMenu = value);
+                            },
+                      validator: (value) => value == null ? 'Please select a menu' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Select Class Group',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: selectedClassGroup,
+                      items: widget.classGroups
+                          .map((group) => DropdownMenuItem(
+                                value: group,
+                                child: Text(group),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() => selectedClassGroup = value);
+                      },
+                      validator: (value) => value == null ? 'Please select a class group' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _classNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Class Number (e.g., 3 or 3_A)',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Please enter class number';
+                        }
+                        final classNumberStr = value.trim().split('_')[0];
+                        final classNumber = int.tryParse(classNumberStr);
+                        if (classNumber == null || classNumber < 1 || classNumber > 8) {
+                          return 'Class number must be between 1 and 8';
+                        }
+                        if (selectedClassGroup == '1-5' && classNumber > 5) {
+                          return 'Class number must be 1-5';
+                        }
+                        if (selectedClassGroup == '6-8' && classNumber < 6) {
+                          return 'Class number must be 6-8';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _totalStudentsController,
+                      decoration: const InputDecoration(
+                        labelText: 'Total Students',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Please enter total students';
+                        }
+                        final num = int.tryParse(value);
+                        if (num == null || num <= 0) {
+                          return 'Enter a valid number of students';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
                 ),
-                onTap: () async {
-                  final selectedDate = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime(2030),
-                  );
-                  if (selectedDate != null) {
-                    setState(() => date = selectedDate);
-                  }
-                },
               ),
-              TextFormField(
-                decoration: const InputDecoration(labelText: 'Class Number (1-8)'),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter a class number';
-                  }
-                  final classNumber = int.tryParse(value.trim());
-                  if (classNumber == null || classNumber < 1 || classNumber > 8) {
-                    return 'Class number must be between 1 and 8';
-                  }
-                  return null;
-                },
-                onSaved: (value) => className = value!.trim(),
-              ),
-              TextFormField(
-                decoration: const InputDecoration(labelText: 'Total Students'),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || int.tryParse(value) == null || int.parse(value) <= 0) {
-                    return 'Please enter a valid number of students';
-                  }
-                  return null;
-                },
-                onSaved: (value) => totalStudents = int.parse(value!),
-              ),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Class Group'),
-                value: classGroup,
-                validator: (value) => value == null ? 'Please select a class group' : null,
-                onChanged: (value) => setState(() => classGroup = value),
-                items: widget.classGroups
-                    .map((group) => DropdownMenuItem(value: group, child: Text(group)))
-                    .toList(),
-              ),
-              DropdownButtonFormField<String>(
-                decoration: const InputDecoration(labelText: 'Menu'),
-                value: menuId,
-                validator: (value) => value == null ? 'Please select a menu' : null,
-                onChanged: (value) {
-                  setState(() {
-                    menuId = value;
-                    final selectedMenu = widget.menus.firstWhere((m) => m['id'].toString() == value);
-                    _calculateRequiredQuantities(selectedMenu);
-                  });
-                },
-                items: widget.menus.map((menu) {
-                  return DropdownMenuItem(
-                    value: menu['id'].toString(),
-                    child: Text(menu['dishName']?.toString() ?? ''),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-        ),
-      ),
+            ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () async {
-            if (_formKey.currentState?.validate() ?? false) {
-              _formKey.currentState?.save();
-              if (date == null || itemsUsed.isEmpty || className == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please fill all fields and select a menu')),
-                );
-                return;
-              }
-              final classNumber = int.parse(className!);
-              if ((classGroup == '1-5' && classNumber > 5) || (classGroup == '6-8' && classNumber < 6)) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Class number must match selected class group')),
-                );
-                return;
-              }
-              try {
-                final stocksData = await _apiService.getAllStocks();
-                final stocks = stocksData['data'] as List<dynamic>? ?? [];
-                for (final item in itemsUsed) {
-                  final itemId = item['itemId'];
-                  final requiredQty = item['requiredQuantity'] as double;
-
-                  final matchingStock = stocks.firstWhere(
-                    (s) => s['ItemId'] == itemId && s['classGroup'] == classGroup,
-                    orElse: () => {},
-                  );
-
-                  if (matchingStock.isEmpty) {
-                    throw Exception('Stock not found for ${item['itemName']} in group $classGroup');
-                  }
-
-                  final updatedStock = {
-                    'previousStock': matchingStock['previousStock'] as double,
-                    'inwardMaterial': matchingStock['inwardMaterial'] as double,
-                    'outwardMaterial': (matchingStock['outwardMaterial'] as double) + requiredQty,
-                    'totalStock': matchingStock['previousStock'] +
-                        matchingStock['inwardMaterial'] -
-                        ((matchingStock['outwardMaterial'] as double) + requiredQty),
-                    'classGroup': matchingStock['classGroup'],
-                  };
-
-                  await _apiService.updateStock(
-                    id: matchingStock['id'].toString(),
-                    previousStock: updatedStock['previousStock'],
-                    inwardMaterial: updatedStock['inwardMaterial'],
-                    outwardMaterial: updatedStock['outwardMaterial'],
-                    totalStock: updatedStock['totalStock'],
-                    classGroup: updatedStock['classGroup'], updates: {},
-                  );
-                }
-
-                final response = await _apiService.createReport(
-                  date: DateFormat('dd-MM-yyyy').format(date!),
-                  menuId: menuId!,
-                  totalStudents: totalStudents!,
-                  className: className!,
-                );
-                if (response['statusCode'] == 201) {
-                  widget.onSubmit({
-                    'date': DateFormat('dd-MM-yyyy').format(date!),
-                    'totalStudents': totalStudents!,
-                    'className': className!,
-                    'menuId': int.parse(menuId!),
-                    'itemsUsed': itemsUsed,
-                  });
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Report created successfully')),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Failed to create report: ${response['statusMessage']}')),
-                  );
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error creating report: $e')),
-                );
-              }
-            }
-          },
+          onPressed: isLoading ? null : _submitReport,
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
           child: const Text('Submit'),
         ),
       ],

@@ -184,7 +184,9 @@ class ApiService {
   Future<String?> getCurrentUserId() async {
     return await _storage.read(key: 'user_id');
   }
-
+Future<String?> getCurrentSchoolId() async {
+    return await _storage.read(key: 'school_id');
+  }
 
 
 Map<String, dynamic> handleResponse(Response response) {
@@ -671,15 +673,22 @@ Future<Map<String, dynamic>> getAllSubjects({required String schoolId}) async {
   Future<Map<String, dynamic>> getSubjectById(String id) async {
     return await getRequest('/subject/fetch/$id');
   }
-Future<List<Map<String, dynamic>>> getSubjectsForTeacher(String teacherId, String schoolId) async {
-    final response = await getRequest('/subject/All', queryParameters: {'teacherId': teacherId, 'schoolId': schoolId});
-    if (response['success'] && response['data'] is List) {
-      return List<Map<String, dynamic>>.from(response['data']);
+
+
+Future<List<Map<String, dynamic>>> getSubjectsForTeacher(String teacherId, String schoolId, {String? classId}) async {
+  try {
+    final response = await getRequest('/subject/All');
+    if (response['success'] == true && response['data'] != null) {
+      return List<Map<String, dynamic>>.from(response['data'])
+          .where((sub) => sub['teacherId']?.toString() == teacherId)
+          .toList();
     }
     return [];
+  } catch (e) {
+    debugPrint('Error fetching subjects for teacher: $e');
+    return [];
   }
-
-
+}
 
 
 
@@ -741,7 +750,7 @@ Future<Map<String, dynamic>> getAllClasses({required String schoolId}) async {
   Future<Map<String, dynamic>> updateClass({
     required String id,
     String? name,
-    String? divisions, List<String>? division,
+    String? divisions, List<String>? division, required String schoolId,
   }) async {
     return await putRequest('/class/update/$id', data: {
       if (name != null) 'name': name,
@@ -827,17 +836,30 @@ Future<Map<String, dynamic>> getAllClasses({required String schoolId}) async {
   required String month,
   required int totalDays,
   required int presentDays,
-  required String status, required String date,
 }) async {
-  return await postRequest('/attendance/register', data: {
-    'studentId': studentId,
-    'month': month,
-    'totalDays': totalDays,
-    'presentDays': presentDays,
-    'status': status,
-  });
+  try {
+    await _addAuthToken('');
+    final response = await _dio.post(
+      '/attendance/register',
+      data: {
+        'studentId': studentId,
+        'month': month,
+        'totalDays': totalDays,
+        'presentDays': presentDays,
+      },
+      options: Options(extra: {'withCredentials': true}),
+    );
+    return _handleResponse(response);
+  } on DioException catch (e) {
+    return _handleError(e);
+  } catch (e) {
+    return {
+      'success': false,
+      'message': 'Unexpected error: ${e.toString()}',
+      'statusCode': 500,
+    };
+  }
 }
-
 
  Future<Map<String, dynamic>> createTeacherAttendance({
   required String teacherId,
@@ -885,35 +907,73 @@ Future<Map<String, dynamic>> getAllClasses({required String schoolId}) async {
     return await deleteRequest('/attendance/delete/$id');
   }
 
-  // Result Routes
-  Future<Map<String, dynamic>> createResult(Map<String, Object> payload, {
-    required String studentId,
-    required String schoolId,
-    required String semester,
-    required Map<String, dynamic> subjects,
-    String? specialProgress,
-    String? hobbies,
-    String? areasOfImprovement,
-  }) async {
-    return await postRequest('/result/register', data: {
-      'studentId': studentId,
-      'schoolId': schoolId,
-      'semester': semester,
-      'subjects': subjects,
-      if (specialProgress != null) 'specialProgress': specialProgress,
-      if (hobbies != null) 'hobbies': hobbies,
-      if (areasOfImprovement != null) 'areasOfImprovement': areasOfImprovement,
-    });
+  Future<Map<String, dynamic>> createResult(Map<String, dynamic> payload) async {
+  // Validate required fields
+  if (!payload.containsKey('studentId') ||
+      !payload.containsKey('schoolId') ||
+      !payload.containsKey('semester') ||
+      !payload.containsKey('subjects')) {
+    return {
+      'success': false,
+      'message': 'Missing required fields: studentId, schoolId, semester, or subjects',
+    };
   }
+
+  // Validate subjects
+  final subjects = payload['subjects'] as Map<String, dynamic>?;
+  if (subjects == null || subjects.isEmpty) {
+    return {
+      'success': false,
+      'message': 'Subjects cannot be empty',
+    };
+  }
+
+  for (final entry in subjects.entries) {
+    final details = entry.value as Map<String, dynamic>;
+    if (!details.containsKey('subjectName') ||
+        !details.containsKey('formativeAssesment') ||
+        !details.containsKey('summativeAssesment') ||
+        !details.containsKey('total') ||
+        !details.containsKey('grade')) {
+      return {
+        'success': false,
+        'message': 'Invalid subject data for ${entry.key}',
+      };
+    }
+    if (details['formativeAssesment'] is! num ||
+        details['summativeAssesment'] is! num ||
+        details['total'] is! num) {
+      return {
+        'success': false,
+        'message': 'Marks for ${entry.key} must be numbers',
+      };
+    }
+  }
+
+  return await postRequest('/result/register', data: payload);
+}
+
 
   Future<Map<String, dynamic>> getAllResults({required Map<String, String?> queryParameters}) async {
     return await getRequest('/result/All');
   }
 
-  Future<Map<String, dynamic>> getResultById(String id, String semester,) async {
-    return await getRequest('/result/fetch/$id');
+Future<Map<String, dynamic>> getResultById(String studentId, String subjectId) async {
+  try {
+    final response = await getRequest('/result/finalResult/$studentId');
+    if (response['success'] == true && response['data'] != null) {
+      final result = response['data'];
+      if (result['subjects'] != null && result['subjects'][subjectId] != null) {
+        return {'success': true, 'data': result};
+      }
+      return {'success': false, 'message': 'No result found for subject'};
+    }
+    return {'success': false, 'message': response['message'] ?? 'Failed to fetch result'};
+  } catch (e) {
+    debugPrint('Error fetching result: $e');
+    return {'success': false, 'message': 'Error fetching result: $e'};
   }
-
+}
     Future<Map<String, dynamic>> getFinalResultByStudentId(String studentId) async {
     return await getRequest('/result/finalResult/$studentId');
   }
@@ -924,82 +984,69 @@ Future<Map<String, dynamic>> getAllClasses({required String schoolId}) async {
 
  Future<Map<String, dynamic>> getStudentsBySubject(String subjectId) async {
   try {
-    await _addAuthToken('');
     final teacherId = await getCurrentUserId();
-
     if (teacherId == null) {
-      return {
-        'success': false,
-        'message': 'Teacher ID not found',
-        'statusCode': null,
-      };
+      return {'success': false, 'message': 'प्रयोक्ता लॉग इन नाही आहे'};
     }
 
-    // Fetch all classes taught by the teacher
-    final classesResponse = await _dio.get(
-      '/class/teacher/$teacherId',
-      options: Options(extra: {'withCredentials': true}),
-    );
 
-    final classesData = _handleResponse(classesResponse);
-    print('Classes response for teacher $teacherId: ${jsonEncode(classesData)}');
-
-    if (classesData['success'] != true || classesData['data'] == null) {
-      return {
-        'success': false,
-        'message': classesData['message'] ?? 'No classes found for this teacher',
-        'statusCode': classesData['statusCode'],
-      };
-    }
-
-    List<dynamic> allStudents = [];
-
-    // Loop through each class and filter based on subjectId
-    for (var classJson in classesData['data'] as List<dynamic>) {
-      final classId = classJson['id'].toString();
-      final classSubjects = classJson['subjects'] as List<dynamic>?;
-
-      // Skip class if it doesn't contain the subjectId
-      if (classSubjects == null || !classSubjects.any((s) => s['id'].toString() == subjectId)) {
-        continue;
-      }
-
-      // Fetch full class details to get students
-      final classResponse = await _dio.get(
-        '/class/fetch/$classId',
-        options: Options(extra: {'withCredentials': true}),
-      );
-
-      final classData = _handleResponse(classResponse);
-      print('Class $classId response: ${jsonEncode(classData)}');
-
-      if (classData['success'] == true && classData['data']?['students'] != null) {
-        allStudents.addAll(classData['data']['students'] as List<dynamic>);
-      }
-    }
-
-    return {
-      'success': true,
-      'data': allStudents,
-      'message': allStudents.isEmpty
-          ? 'No students found for subject ID $subjectId in teacher\'s classes.'
-          : 'Students fetched successfully.',
-      'statusCode': 200,
-    };
-
-  } on DioException catch (e) {
-    return _handleError(e);
+Future<Map<String, dynamic>> getClassesByTeacher(String teacherId) async {
+  try {
+    final response = await getRequest('/class/teacher/$teacherId');
+    return response;
   } catch (e) {
-    return {
-      'success': false,
-      'message': 'Unexpected error: ${e.toString()}',
-      'statusCode': 500,
-    };
+    debugPrint('Error fetching classes: $e');
+    return {'success': false, 'message': 'Error fetching classes: $e'};
+  }
+}
+
+Future<Map<String, dynamic>> getStudentsByClass(String classId) async {
+  try {
+    final response = await getRequest('/class/students/$classId');
+    return response;
+  } catch (e) {
+    debugPrint('Error fetching students: $e');
+    return {'success': false, 'message': 'Error fetching students: $e'};
   }
 }
 
 
-  
+
+    final classesResponse = await getRequest('/class/teacher/$teacherId');
+    if (!classesResponse['success'] || classesResponse['data'] == null) {
+      return {'success': false, 'message': 'वर्ग मिळवण्यात अयशस्वी'};
+    }
+
+    final classIds = (classesResponse['data'] as List<dynamic>)
+        .map((c) => c['id'].toString())
+        .toList();
+
+    final subjectsResponse = await getRequest('/subject/All');
+    if (!subjectsResponse['success'] || subjectsResponse['data'] == null) {
+      return {'success': false, 'message': 'विषय मिळवण्यात अयशस्वी'};
+    }
+
+    final isTeacherSubject = (subjectsResponse['data'] as List<dynamic>)
+        .any((sub) => sub['id'].toString() == subjectId && sub['teacherId'].toString() == teacherId);
+    if (!isTeacherSubject) {
+      return {'success': false, 'message': 'हा विषय शिक्षकाला नियुक्त नाही'};
+    }
+
+    final studentsResponse = await getRequest('/student/All');
+    if (studentsResponse['success'] && studentsResponse['data'] != null) {
+      final students = List<Map<String, dynamic>>.from(studentsResponse['data']);
+      final filteredStudents = students.where((student) {
+        final studentClassId = student['classId']?.toString();
+        return classIds.contains(studentClassId);
+      }).toList();
+
+      return {'success': true, 'data': filteredStudents};
+    }
+    return {'success': false, 'message': 'विद्यार्थी मिळवण्यात अयशस्वी'};
+  } catch (e) {
+    return {'success': false, 'message': 'विद्यार्थी मिळवण्यात त्रुटी: $e'};
+  }
+}
  Future<void> _addAuthToken(String baseUrl) async {
     final token = await _storage.read(key: 'auth_token');
     print('Retrieved auth_token: $token');
@@ -1025,7 +1072,6 @@ Future<Map<String, dynamic>> updateStudentSubject(Map<dynamic, dynamic> map, {
     try {
       // Validate studentId
       int.parse(studentId);
-      await _addAuthToken('');
       final response = await _dio.put(
         '/student/updatesubject-marks/$studentId',
         data: {
@@ -1033,10 +1079,7 @@ Future<Map<String, dynamic>> updateStudentSubject(Map<dynamic, dynamic> map, {
           if (formativeAssesment != null) 'formativeAssesment': formativeAssesment,
           if (summativeAssesment != null) 'summativeAssesment': summativeAssesment,
         },
-        options: Options(
-          contentType: Headers.jsonContentType,
-          extra: {'withCredentials': true},
-        ),
+      
       );
       final responseData = _handleResponse(response);
 
@@ -1077,7 +1120,7 @@ Future<Map<String, dynamic>> updateStudentSubject(Map<dynamic, dynamic> map, {
     };
   }
 
-  Future<Map<String, dynamic>> updateResult({
+  Future<Map<String, dynamic>> updateResult(Map<String, Object?> data, {
     required String id,
     String? studentId,
     String? schoolId,
@@ -1193,21 +1236,25 @@ Future<Map<String, dynamic>> updateStudentSubject(Map<dynamic, dynamic> map, {
     return await getRequest('/mdm/getAllStocks');
   }
 
- Future<Map<String, dynamic>> updateStock({
-  required String id,
-  double? previousStock,
-  double? inwardMaterial,
-  double? outwardMaterial,
-  double? totalStock,
-  String? classGroup, required Map<String, dynamic> updates,
-}) async {
-  return await putRequest('/mdm/updateStock/$id', data: {
-    if (previousStock != null) 'previousStock': previousStock,
-    if (inwardMaterial != null) 'inwardMaterial': inwardMaterial,
-    if (outwardMaterial != null) 'outwardMaterial': outwardMaterial,
-    if (totalStock != null) 'totalStock': totalStock,
-    if (classGroup != null) 'classGroup': classGroup,
-  });
+  Future<Map<String, dynamic>> updateStock({
+    required String id,
+    double? previousStock,
+    double? inwardMaterial,
+    double? outwardMaterial,
+    double? totalStock,
+    String? classGroup,
+  }) async {
+    return await putRequest('/mdm/updateStock/$id', data: {
+      if (previousStock != null) 'previousStock': previousStock,
+      if (inwardMaterial != null) 'inwardMaterial': inwardMaterial,
+      if (outwardMaterial != null) 'outwardMaterial': outwardMaterial,
+      if (totalStock != null) 'totalStock': totalStock,
+      if (classGroup != null) 'classGroup': classGroup,
+    });
+  }
+
+Future<Map<String, dynamic>> getAllInventoryReports() async {
+  return await getRequest('/mdm/getAllReports');
 }
 
 
@@ -1230,18 +1277,24 @@ Future<Map<String, dynamic>> updateStudentSubject(Map<dynamic, dynamic> map, {
   Future<Map<String, dynamic>> createReport({
     required String date,
     required String menuId,
-    required int totalStudents,
+    required int? totalStudent,
     required String className,
   }) async {
-    return await postRequest('/mdm/createReport', data: {
+    final payload = {
       'date': date,
       'menuId': menuId,
-      'totalStudents': totalStudents,
+      'totalStudent': totalStudent,
       'className': className,
-    });
+    };
+    if (kDebugMode) {
+      debugPrint('createReport payload: ${jsonEncode(payload)}');
+    }
+    return await postRequest('/mdm/createReport', data: payload);
   }
-
-  Future<Map<String, dynamic>> getAllReports() async {
+  
+  
+  
+    Future<Map<String, dynamic>> getAllReports() async {
     return await getRequest('/mdm/getAllReports');
   }
 
@@ -1267,4 +1320,9 @@ Future<Map<String, dynamic>> updateStudentSubject(Map<dynamic, dynamic> map, {
   Future<Map<String, dynamic>> carryForwardStock() async {
     return await putRequest('/mdm/carryForwardStock', data: {});
   }
+
+  
 }
+
+
+

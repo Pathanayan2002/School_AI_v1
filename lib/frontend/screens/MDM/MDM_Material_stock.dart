@@ -1,7 +1,6 @@
-import 'package:Ai_School_App/frontend/screens/MDM/InwardDetailsDialog.dart';
 import 'package:flutter/material.dart';
-import '../services/api_client.dart'; // Import the ApiService
-import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
+import '../services/api_client.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 
 class MDMMaterialStockPage extends StatefulWidget {
   const MDMMaterialStockPage({super.key});
@@ -11,41 +10,31 @@ class MDMMaterialStockPage extends StatefulWidget {
 }
 
 class _MDMMaterialStockPageState extends State<MDMMaterialStockPage> {
-  final _apiService = ApiService(); // Use ApiService directly
+  final _apiService = ApiService();
   List<Map<String, dynamic>> stockList = [];
   bool isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _apiService.init().then((_) => _loadStockData()); // Initialize API once
+    _loadStockData();
   }
 
   Future<void> _loadStockData() async {
     setState(() => isLoading = true);
     try {
       final response = await _apiService.getAllStocks();
-      if (kDebugMode) {
-        debugPrint('getAllStocks response: $response');
-      }
       if (response['success'] == true && response['data'] is List) {
         setState(() {
           stockList = List<Map<String, dynamic>>.from(response['data']);
-          if (kDebugMode) {
-            debugPrint('Stock list updated: ${stockList.length} items');
-          }
         });
       } else {
-        setState(() => stockList = []); // Clear list on failure
+        setState(() => stockList = []);
         throw Exception(response['message'] ?? 'Failed to load stock data');
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error in _loadStockData: $e');
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load stock data: $e')),
-      );
+      if (kDebugMode) debugPrint('Error in _loadStockData: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to load stock data: $e')));
     } finally {
       setState(() => isLoading = false);
     }
@@ -54,16 +43,11 @@ class _MDMMaterialStockPageState extends State<MDMMaterialStockPage> {
   Future<void> _openInwardDialog() async {
     try {
       final itemsResponse = await _apiService.getAllItems();
-      if (kDebugMode) {
-        debugPrint('getAllItems response: $itemsResponse');
-      }
-
       if (!itemsResponse['success'] || itemsResponse['data'] == null) {
         throw Exception(itemsResponse['message'] ?? 'Failed to load items');
       }
 
       final items = List<Map<String, dynamic>>.from(itemsResponse['data']);
-
       final dialogResult = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (_) => InwardDetailsDialog(
@@ -75,15 +59,12 @@ class _MDMMaterialStockPageState extends State<MDMMaterialStockPage> {
       if (dialogResult == null) return;
 
       final selectedItem = items.firstWhere(
-        (item) => item['itemName'].toString().trim().toLowerCase() ==
-                  dialogResult['itemName'].toString().trim().toLowerCase(),
+        (item) => item['itemName'].toString().trim().toLowerCase() == dialogResult['itemName'].toString().trim().toLowerCase(),
         orElse: () => {},
       );
 
       if (selectedItem.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Selected item not found')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selected item not found')));
         return;
       }
 
@@ -91,27 +72,25 @@ class _MDMMaterialStockPageState extends State<MDMMaterialStockPage> {
       final classGroup = dialogResult['classGroup'];
       final inwardQty = double.parse(dialogResult['inwardQty'].toString());
 
-      if (kDebugMode) {
-        debugPrint('Attempting to update stock: itemId=$itemId, classGroup=$classGroup, inwardQty=$inwardQty');
-      }
-
-      setState(() => isLoading = true); // Show loading indicator
-      final updateResponse = await _apiService.updateStockInward(
-        itemId: itemId.toString(),
-        classGroup: classGroup,
-        inwardMaterial: inwardQty,
+      setState(() => isLoading = true);
+      final existingStock = stockList.firstWhere(
+        (stock) => stock['ItemId'] == itemId && stock['classGroup'] == classGroup,
+        orElse: () => {},
       );
 
-      if (kDebugMode) {
-        debugPrint('updateStockInward response: $updateResponse');
-      }
-
-      if (updateResponse['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Inward stock updated successfully')),
+      if (existingStock.isNotEmpty) {
+        final response = await _apiService.updateStockInward(
+          itemId: itemId.toString(),
+          classGroup: classGroup,
+          inwardMaterial: inwardQty,
         );
-        await _loadStockData();
-        await Future.delayed(const Duration(milliseconds: 300)); // Brief delay for UX
+
+        if (response['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Inward stock updated successfully')));
+          await _loadStockData();
+        } else {
+          throw Exception(response['message'] ?? 'Failed to update inward stock');
+        }
       } else {
         final createResponse = await _apiService.createStock(
           itemId: int.parse(itemId.toString()),
@@ -122,75 +101,23 @@ class _MDMMaterialStockPageState extends State<MDMMaterialStockPage> {
           classGroup: classGroup,
         );
 
-        if (kDebugMode) {
-          debugPrint('createStock response: $createResponse');
-        }
-
         if (createResponse['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Stock created and inward updated')),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Stock created and inward updated')));
           await _loadStockData();
-          await Future.delayed(const Duration(milliseconds: 300)); // Brief delay for UX
         } else {
           throw Exception(createResponse['message'] ?? 'Stock creation failed');
         }
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error in _openInwardDialog: $e');
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    } finally {
-      setState(() => isLoading = false);
-    }
-  }
-
-  Future<void> _carryForward() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Carry Forward Stocks'),
-        content: const Text('This will reset inward/outward and carry forward totals. Proceed?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm')),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    setState(() => isLoading = true);
-    try {
-      final response = await _apiService.carryForwardStock();
-      if (kDebugMode) {
-        debugPrint('carryForwardStock response: $response');
-      }
-      if (response['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(response['message'] ?? 'Carry forward successful')),
-        );
-        await _loadStockData();
-        await Future.delayed(const Duration(milliseconds: 300)); // Brief delay for UX
-      } else {
-        throw Exception(response['message'] ?? 'Failed to carry forward stock');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error in _carryForward: $e');
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      if (kDebugMode) debugPrint('Error in _openInwardDialog: $e');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
   Future<void> _editStock(Map<String, dynamic> stock) async {
-    final dialogResult = await showDialog<Map<String, dynamic>>(
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => EditStockDialog(
         stock: stock,
@@ -198,83 +125,62 @@ class _MDMMaterialStockPageState extends State<MDMMaterialStockPage> {
       ),
     );
 
-    if (dialogResult != null) {
-      try {
-        final totalStock = dialogResult['previousStock'] +
-            dialogResult['inwardMaterial'] -
-            dialogResult['outwardMaterial'];
-        final response = await _apiService.updateStock(
-          id: stock['id'].toString(),
-          previousStock: dialogResult['previousStock'],
-          inwardMaterial: dialogResult['inwardMaterial'],
-          outwardMaterial: dialogResult['outwardMaterial'],
-          totalStock: totalStock,
-          classGroup: dialogResult['classGroup'],
-          updates: {},
-        );
-        if (kDebugMode) {
-          debugPrint('updateStock response: $response');
-        }
-        if (response['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Stock updated')),
-          );
-          await _loadStockData();
-          await Future.delayed(const Duration(milliseconds: 300)); // Brief delay for UX
-        } else {
-          throw Exception(response['message'] ?? 'Failed to update stock');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('Error in _editStock: $e');
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+    if (result == null) return;
+
+    setState(() => isLoading = true);
+    try {
+      final response = await _apiService.updateStock(
+        id: stock['id'].toString(),
+        previousStock: result['previousStock'],
+        inwardMaterial: result['inwardMaterial'],
+        outwardMaterial: result['outwardMaterial'],
+        totalStock: result['previousStock'] + result['inwardMaterial'] - result['outwardMaterial'],
+        classGroup: result['classGroup'],
+      );
+
+      if (response['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Stock updated')));
+        await _loadStockData();
+      } else {
+        throw Exception(response['statusMessage'] ?? 'Failed to update stock');
       }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+    } finally {
+      setState(() => isLoading = false);
     }
   }
 
-  Future<void> _deleteStock(String stockId, String itemName) async {
+  Future<void> _deleteStock(String id, String itemName) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete Stock'),
-        content: Text('Are you sure you want to delete the stock for "$itemName"?'),
+        content: Text('Are you sure you want to delete the stock for $itemName?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
+
     if (confirm != true) return;
 
     setState(() => isLoading = true);
     try {
-      final response = await _apiService.deleteStock(stockId);
-      if (kDebugMode) {
-        debugPrint('deleteStock response: $response');
-      }
-      if (response['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(response['message'] ?? 'Stock deleted successfully')),
-        );
+      final response = await _apiService.deleteStock(id);
+      if (response['success']) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Stock deleted')));
         await _loadStockData();
-        await Future.delayed(const Duration(milliseconds: 300)); // Brief delay for UX
       } else {
-        throw Exception(response['message'] ?? 'Failed to delete stock');
+        throw Exception(response['statusMessage'] ?? 'Failed to delete stock');
       }
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error in _deleteStock: $e');
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => isLoading = false);
     }
@@ -284,93 +190,169 @@ class _MDMMaterialStockPageState extends State<MDMMaterialStockPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('📦 Material in Stock'),
-        backgroundColor: Colors.indigo,
-        centerTitle: true,
-        elevation: 4,
+        title: const Text('Material Stock'),
+        backgroundColor: Colors.teal,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _openInwardDialog,
+            tooltip: 'Add Inward Stock',
+          ),
+        ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      OutlinedButton.icon(
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add Inward'),
-                        style: OutlinedButton.styleFrom(foregroundColor: Colors.indigo),
-                        onPressed: _openInwardDialog,
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.sync),
-                        label: const Text('Carry Forward'),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-                        onPressed: _carryForward,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        key: ValueKey(stockList.length), // Force rebuild on stockList change
-                        headingRowColor: WidgetStateProperty.all(Colors.indigo.shade100),
-                        columns: const [
-                          DataColumn(label: Text('Item')),
-                          DataColumn(label: Text('Class')),
-                          DataColumn(label: Text('Prev')),
-                          DataColumn(label: Text('Inward')),
-                          DataColumn(label: Text('Outward')),
-                          DataColumn(label: Text('Total')),
-                          DataColumn(label: Text('Edit')),
-                          DataColumn(label: Text('Delete')),
-                        ],
-                        rows: stockList.isEmpty
-                            ? [
-                                const DataRow(cells: [
-                                  DataCell(Text('No stocks available')),
-                                  DataCell(Text('')),
-                                  DataCell(Text('')),
-                                  DataCell(Text('')),
-                                  DataCell(Text('')),
-                                  DataCell(Text('')),
-                                  DataCell(Text('')),
-                                  DataCell(Text('')),
-                                ])
-                              ]
-                            : stockList.map((s) {
+          : RefreshIndicator(
+              onRefresh: _loadStockData,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Stock List', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    stockList.isEmpty
+                        ? const Center(child: Text('No stock available'))
+                        : SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: DataTable(
+                              columns: const [
+                                DataColumn(label: Text('Item Name')),
+                                DataColumn(label: Text('Class Group')),
+                                DataColumn(label: Text('Previous Stock')),
+                                DataColumn(label: Text('Inward')),
+                                DataColumn(label: Text('Outward')),
+                                DataColumn(label: Text('Total Stock')),
+                                DataColumn(label: Text('Actions')),
+                              ],
+                              rows: stockList.map((s) {
                                 return DataRow(cells: [
                                   DataCell(Text(s['Items']?['itemName']?.toString() ?? 'N/A')),
                                   DataCell(Text(s['classGroup']?.toString() ?? 'N/A')),
-                                  DataCell(Text(s['previousStock']?.toString() ?? '0')),
-                                  DataCell(Text(s['inwardMaterial']?.toString() ?? '0')),
-                                  DataCell(Text(s['outwardMaterial']?.toString() ?? '0')),
-                                  DataCell(Text(s['totalStock']?.toString() ?? '0')),
-                                  DataCell(
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, color: Colors.blueAccent),
-                                      onPressed: () => _editStock(s),
-                                    ),
-                                  ),
-                                  DataCell(
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                      onPressed: () => _deleteStock(s['id'].toString(), s['Items']?['itemName']?.toString() ?? 'N/A'),
-                                    ),
-                                  ),
+                                  DataCell(Text(s['previousStock']?.toStringAsFixed(2) ?? '0.00')),
+                                  DataCell(Text(s['inwardMaterial']?.toStringAsFixed(2) ?? '0.00')),
+                                  DataCell(Text(s['outwardMaterial']?.toStringAsFixed(2) ?? '0.00')),
+                                  DataCell(Text(s['totalStock']?.toStringAsFixed(2) ?? '0.00')),
+                                  DataCell(Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, color: Colors.blue),
+                                        onPressed: () => _editStock(s),
+                                        tooltip: 'Edit Stock',
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, color: Colors.red),
+                                        onPressed: () => _deleteStock(s['id'].toString(), s['Items']?['itemName']?.toString() ?? 'N/A'),
+                                        tooltip: 'Delete Stock',
+                                      ),
+                                    ],
+                                  )),
                                 ]);
                               }).toList(),
-                      ),
-                    ),
-                  ),
-                ],
+                            ),
+                          ),
+                  ],
+                ),
               ),
             ),
+    );
+  }
+}
+
+class InwardDetailsDialog extends StatefulWidget {
+  final List<String> availableItemNames;
+  final List<String> availableClassGroups;
+
+  const InwardDetailsDialog({
+    super.key,
+    required this.availableItemNames,
+    required this.availableClassGroups,
+  });
+
+  @override
+  State<InwardDetailsDialog> createState() => _InwardDetailsDialogState();
+}
+
+class _InwardDetailsDialogState extends State<InwardDetailsDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late String _selectedItemName;
+  late String _selectedClassGroup;
+  final _inwardQtyController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedItemName = widget.availableItemNames.isNotEmpty ? widget.availableItemNames.first : '';
+    _selectedClassGroup = widget.availableClassGroups.isNotEmpty ? widget.availableClassGroups.first : '';
+  }
+
+  @override
+  void dispose() {
+    _inwardQtyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add Inward Entry'),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: _selectedItemName.isNotEmpty ? _selectedItemName : null,
+                decoration: const InputDecoration(labelText: 'Item Name', border: OutlineInputBorder()),
+                items: widget.availableItemNames.map((name) => DropdownMenuItem(value: name, child: Text(name))).toList(),
+                onChanged: (value) => setState(() => _selectedItemName = value!),
+                validator: (value) => value == null || value.isEmpty ? 'Select an item' : null,
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedClassGroup,
+                decoration: const InputDecoration(labelText: 'Class Group', border: OutlineInputBorder()),
+                items: widget.availableClassGroups.map((group) => DropdownMenuItem(value: group, child: Text(group))).toList(),
+                onChanged: (value) => setState(() => _selectedClassGroup = value!),
+                validator: (value) => value == null || value.isEmpty ? 'Select a class group' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _inwardQtyController,
+                decoration: const InputDecoration(labelText: 'Inward Quantity', border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Enter quantity';
+                  final qty = num.tryParse(value);
+                  if (qty == null || qty <= 0) return 'Enter valid quantity';
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            if (_formKey.currentState!.validate()) {
+              Navigator.pop(context, {
+                'itemName': _selectedItemName,
+                'classGroup': _selectedClassGroup,
+                'inwardQty': double.parse(_inwardQtyController.text),
+              });
+            }
+          },
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+          child: const Text('Submit'),
+        ),
+      ],
     );
   }
 }
@@ -409,68 +391,90 @@ class _EditStockDialogState extends State<EditStockDialog> {
     super.dispose();
   }
 
-  Widget _buildNumberField(String label, TextEditingController controller) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: TextInputType.number,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-        ),
-        validator: (value) {
-          if (value == null || value.isEmpty) return 'Enter $label';
-          if (double.tryParse(value) == null) return 'Invalid number';
-          return null;
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Edit Stock', style: TextStyle(fontWeight: FontWeight.bold)),
-      content: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
+      title: Text('Edit Stock for ${widget.stock['Items']?['itemName']?.toString() ?? 'N/A'}'),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Item: ${widget.stock['Items']?['itemName']?.toString() ?? 'N/A'}', style: const TextStyle(fontSize: 16)),
-              const SizedBox(height: 8),
+              TextFormField(
+                controller: _previousStockController,
+                decoration: const InputDecoration(labelText: 'Previous Stock', border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Enter previous stock';
+                  final qty = num.tryParse(value);
+                  if (qty == null || qty < 0) return 'Enter valid quantity';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _inwardMaterialController,
+                decoration: const InputDecoration(labelText: 'Inward Material', border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Enter inward material';
+                  final qty = num.tryParse(value);
+                  if (qty == null || qty < 0) return 'Enter valid quantity';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _outwardMaterialController,
+                decoration: const InputDecoration(labelText: 'Outward Material', border: OutlineInputBorder()),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return 'Enter outward material';
+                  final qty = num.tryParse(value);
+                  if (qty == null || qty < 0) return 'Enter valid quantity';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 value: _selectedClassGroup,
-                decoration: const InputDecoration(labelText: 'Class Group'),
-                items: widget.availableClassGroups.map((group) {
-                  return DropdownMenuItem(value: group, child: Text(group));
-                }).toList(),
+                decoration: const InputDecoration(labelText: 'Class Group', border: OutlineInputBorder()),
+                items: widget.availableClassGroups.map((group) => DropdownMenuItem(value: group, child: Text(group))).toList(),
                 onChanged: (value) => setState(() => _selectedClassGroup = value!),
-                validator: (value) => value == null ? 'Please select a class group' : null,
+                validator: (value) => value == null || value.isEmpty ? 'Select a class group' : null,
               ),
-              _buildNumberField('Previous Stock', _previousStockController),
-              _buildNumberField('Inward Material', _inwardMaterialController),
-              _buildNumberField('Outward Material', _outwardMaterialController),
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
         ElevatedButton(
           onPressed: () {
             if (_formKey.currentState!.validate()) {
+              final previousStock = double.parse(_previousStockController.text);
+              final inwardMaterial = double.parse(_inwardMaterialController.text);
+              final outwardMaterial = double.parse(_outwardMaterialController.text);
+              if (previousStock + inwardMaterial - outwardMaterial < 0) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Total stock cannot be negative')),
+                );
+                return;
+              }
               Navigator.pop(context, {
-                'previousStock': double.parse(_previousStockController.text),
-                'inwardMaterial': double.parse(_inwardMaterialController.text),
-                'outwardMaterial': double.parse(_outwardMaterialController.text),
+                'previousStock': previousStock,
+                'inwardMaterial': inwardMaterial,
+                'outwardMaterial': outwardMaterial,
                 'classGroup': _selectedClassGroup,
               });
             }
           },
-          child: const Text('Save'),
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+          child: const Text('Update'),
         ),
       ],
     );

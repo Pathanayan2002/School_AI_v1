@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_client.dart';
-import 'dart:async';
 
 class ManageClassesWithDivision extends StatefulWidget {
   const ManageClassesWithDivision({super.key});
@@ -29,7 +28,11 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
       if (result['success'] == true) {
         final List<dynamic> data = result['data'];
         setState(() {
-          _classes = data.map((item) => item as Map<String, dynamic>).toList();
+          _classes = data.map((item) => {
+                'id': item['id'] ?? item['_id'],
+                'name': item['name'] ?? 'Unknown',
+                'divisions': item['divisions'] ?? [],
+              }).toList();
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -130,7 +133,7 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
                 try {
                   final result = await _apiService.createClass(
                     name: newClassName.trim(),
-               
+                  
                     schoolId: '',
                   );
                   if (result['success'] == true) {
@@ -145,9 +148,7 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(
-                          result['message'] ?? 'Failed to add class',
-                        ),
+                        content: Text(result['message'] ?? 'Failed to add class'),
                         backgroundColor: Colors.redAccent,
                       ),
                     );
@@ -216,7 +217,7 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
               TextField(
                 controller: divisionController,
                 decoration: InputDecoration(
-                  labelText: 'Divisions (e.g., A,B,C)',
+                  labelText: 'Divisions',
                   filled: true,
                   fillColor: Colors.grey[100],
                   border: OutlineInputBorder(
@@ -235,33 +236,34 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
                 style: GoogleFonts.poppins(color: Colors.grey[600]),
               ),
             ),
-            ElevatedButton(
+            ElevatedButton.icon(
               onPressed: () async {
                 final updatedName = nameController.text.trim();
-                if (updatedName.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("⚠️ Class name cannot be empty"),
-                      backgroundColor: Colors.redAccent,
-                    ),
-                  );
-                  return;
-                }
                 final divisions = divisionController.text
                     .split(',')
                     .map((e) => e.trim())
                     .where((e) => e.isNotEmpty)
                     .toList();
+                if (updatedName.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("⚠️ Please enter a valid class name"),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
                 try {
                   final result = await _apiService.updateClass(
                     id: classId,
                     name: updatedName,
-                    division: divisions.isNotEmpty ? divisions : null,
+                   
+                    schoolId: '',
                   );
                   if (result['success'] == true) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(result['message'] ?? 'Class updated'),
+                        content: Text(result['message'] ?? 'Class updated successfully'),
                         backgroundColor: Colors.green,
                       ),
                     );
@@ -270,9 +272,7 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
                   } else {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(
-                          result['message'] ?? 'Failed to update class',
-                        ),
+                        content: Text(result['message'] ?? 'Failed to update class'),
                         backgroundColor: Colors.redAccent,
                       ),
                     );
@@ -286,8 +286,9 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
                   );
                 }
               },
-              child: Text(
-                'Save Changes',
+              icon: const Icon(Icons.save, color: Colors.white),
+              label: Text(
+                'Update Class',
                 style: GoogleFonts.poppins(color: Colors.white),
               ),
               style: ElevatedButton.styleFrom(
@@ -303,227 +304,76 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
     );
   }
 
-  void _deleteClass(String classId) async {
-    final shouldDelete = await showDeleteConfirmationDialog(context);
-    if (!shouldDelete) return;
-    try {
-      final result = await _apiService.deleteClass(classId);
-      if (result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] ?? 'Class deleted'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        await _fetchClasses();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result['message'] ?? 'Failed to delete class'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error deleting class: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    }
-  }
-
-  Future<bool> showDeleteConfirmationDialog(BuildContext context) async {
-    final completer = Completer<bool>();
+  void _confirmDeleteClass(String classId, String className) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.white,
-        title: Text(
-          'Confirm Delete',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.bold,
-            color: Colors.indigo[900],
-          ),
-        ),
-        content: Text(
-          'Are you sure you want to delete this class? This action cannot be undone.',
-          style: GoogleFonts.poppins(color: Colors.grey[800]),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              completer.complete(false);
-              Navigator.of(context).pop();
-            },
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.poppins(color: Colors.grey[600]),
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            'Delete Class',
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              color: Colors.indigo[900],
             ),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          content: Text(
+            'Are you sure you want to delete class $className?',
+            style: GoogleFonts.poppins(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(color: Colors.grey[600]),
               ),
             ),
-            onPressed: () {
-              completer.complete(true);
-              Navigator.of(context).pop();
-            },
-            child: Text(
-              'Delete',
-              style: GoogleFonts.poppins(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-    return completer.future;
-  }
-
-  Widget _buildClassTable() {
-    return Card(
-      elevation: 10,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Manage Classes',
-                  style: GoogleFonts.poppins(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.indigo[900],
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: _showAddDialog,
-                  icon: const Icon(Icons.add, color: Colors.white),
-                  label: Text(
-                    'Add New Class',
-                    style: GoogleFonts.poppins(color: Colors.white),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.indigo[700],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            if (_isLoading)
-              const Center(
-                child: CircularProgressIndicator(
-                  color: Colors.indigo,
-                  strokeWidth: 3,
-                ),
-              )
-            else if (_classes.isEmpty)
-              Center(
-                child: Text(
-                  'No classes found. Tap "+" to add one.',
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey[600],
-                    fontSize: 16,
-                  ),
-                ),
-              )
-            else
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: DataTable(
-                  headingRowColor: MaterialStateProperty.all(Colors.indigo[50]),
-                  dataRowHeight: 60,
-                  columns: [
-                    DataColumn(
-                      label: Text(
-                        'ID',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ElevatedButton.icon(
+              onPressed: () async {
+                try {
+                  final result = await _apiService.deleteClass(classId);
+                  if (result['success'] == true) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['message'] ?? 'Class deleted successfully'),
+                        backgroundColor: Colors.green,
                       ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'Class Name',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'Divisions',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Text(
-                        'Actions',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                  rows: _classes.map((cls) {
-                    final String? classId = cls['_id']?.toString() ?? cls['id']?.toString();
-                    final List<dynamic>? divisions = cls['division'];
-                    return DataRow(
-                      cells: [
-                        DataCell(
-                          Text(
-                            classId ?? 'N/A',
-                            style: GoogleFonts.poppins(),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            cls['name'] ?? 'N/A',
-                            style: GoogleFonts.poppins(),
-                          ),
-                        ),
-                        DataCell(
-                          Text(
-                            divisions?.join(', ') ?? 'None',
-                            style: GoogleFonts.poppins(),
-                          ),
-                        ),
-                        DataCell(
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.indigo),
-                                tooltip: 'Edit',
-                                onPressed: () => _showEditDialog(classId ?? '', cls['name'] ?? '', cls['division']),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                tooltip: 'Delete',
-                                onPressed: () => _deleteClass(classId ?? ''),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                     );
-                  }).toList(),
+                    await _fetchClasses();
+                    Navigator.of(context).pop();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(result['message'] ?? 'Failed to delete class'),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error deleting class: $e'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.delete, color: Colors.white),
+              label: Text(
+                'Delete',
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
+            ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -531,56 +381,77 @@ class _ManageClassesWithDivisionState extends State<ManageClassesWithDivision> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.indigo[700],
         title: Text(
           'Manage Classes',
-          style: GoogleFonts.poppins(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-          ),
+          style: GoogleFonts.poppins(color: Colors.white),
         ),
+        backgroundColor: Colors.indigo[700],
         centerTitle: true,
-        elevation: 0,
-      ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.indigo[700]!, Colors.indigo[200]!],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add, color: Colors.white),
+            onPressed: _showAddDialog,
+            tooltip: 'Add Class',
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Manage School Classes',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: _classes.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No classes found',
+                              style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _classes.length,
+                            itemBuilder: (context, index) {
+                              final classData = _classes[index];
+                              final classId = classData['id'].toString();
+                              final className = classData['name'] ?? 'Unknown';
+                              final divisions = List<String>.from(classData['divisions'] ?? []);
+
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: ListTile(
+                                  title: Text(
+                                    className,
+                                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                                  ),
+                                  subtitle: Text(
+                                    'Divisions: ${divisions.isEmpty ? 'None' : divisions.join(', ')}',
+                                    style: GoogleFonts.poppins(color: Colors.grey[600]),
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.edit, color: Colors.blue),
+                                        onPressed: () => _showEditDialog(classId, className, divisions),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, color: Colors.red),
+                                        onPressed: () => _confirmDeleteClass(classId, className),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'View, edit, or delete school classes and their divisions.',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                _buildClassTable(),
-              ],
+                ],
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 }

@@ -9,7 +9,7 @@ import 'assign_marks.dart';
 
 class TeacherDashboardPage extends StatefulWidget {
   static const routeName = '/teacherDashboard';
-  const TeacherDashboardPage({super.key, required String teacherId});
+  const TeacherDashboardPage({super.key});
 
   @override
   _TeacherDashboardPageState createState() => _TeacherDashboardPageState();
@@ -43,16 +43,24 @@ class _TeacherDashboardPageState extends State<TeacherDashboardPage> with Single
       teacherId = await _apiService.getCurrentUserId();
       if (teacherId == null) {
         setState(() {
-          errorMessage = 'Please log in to continue';
+          errorMessage = 'User not logged in';
           isLoading = false;
         });
         return;
       }
 
-      // Load subjects
-      final subjectsResponse = await _apiService.getAllSubjects(schoolId: '');
+      final schoolId = await _apiService.getCurrentSchoolId();
+      if (schoolId == null) {
+        setState(() {
+          errorMessage = 'School ID not found. Please login again.';
+          isLoading = false;
+        });
+        return;
+      }
+
+      final subjectsResponse = await _apiService.getAllSubjects(schoolId: schoolId);
       developer.log('Subjects response: ${jsonEncode(subjectsResponse)}', name: 'TeacherDashboardPage');
-      if (subjectsResponse['success'] == true && subjectsResponse['data'] != null) {
+      if (subjectsResponse['success'] && subjectsResponse['data'] != null) {
         assignedSubjects = subjectsResponse['data']
             .where((sub) => sub['teacherId']?.toString() == teacherId)
             .toList();
@@ -64,24 +72,19 @@ class _TeacherDashboardPageState extends State<TeacherDashboardPage> with Single
         });
       }
 
-      // Load classes
       final classesResponse = await _apiService.getClassesByTeacherId(teacherId!);
       developer.log('Classes response: ${jsonEncode(classesResponse)}', name: 'TeacherDashboardPage');
-      if (classesResponse['success'] == true && classesResponse['data'] != null) {
+      if (classesResponse['success'] && classesResponse['data'] != null) {
         final classData = classesResponse['data'] as List<dynamic>;
-        classes = classData
-            .map((classJson) => ClassModel.fromJson(classJson))
-            .toList();
+        classes = classData.map((classJson) => ClassModel.fromJson(classJson)).toList();
         classStudents = {
           for (var classJson in classData)
-            ClassModel.fromJson(classJson).id: (classJson['students'] as List<dynamic>? ?? [])
-                .map((s) => Student.fromJson(s))
-                .toList()
+            ClassModel.fromJson(classJson).id: (classJson['students'] as List<dynamic>?)?.map((s) => Student.fromJson(s)).toList() ?? []
         };
         developer.log('Loaded ${classes.length} classes for teacher $teacherId', name: 'TeacherDashboardPage');
       } else {
         setState(() {
-          errorMessage = classesResponse['message'] ?? 'No classes assigned to this teacher';
+          errorMessage = classesResponse['message'] ?? 'Failed to load classes';
         });
       }
     } catch (e) {
@@ -103,14 +106,14 @@ class _TeacherDashboardPageState extends State<TeacherDashboardPage> with Single
     }
 
     try {
-      final response = await _apiService.getResultById(studentId, subjectId,);
+      final response = await _apiService.getResultById(studentId, subjectId);
       developer.log('Fetch result response: ${jsonEncode(response)}', name: 'TeacherDashboardPage');
-      if (response['success'] == true && response['data'] != null) {
+      if (response['success'] && response['data'] != null) {
         resultCache[cacheKey] = response['data'];
         return response['data'];
       } else {
         developer.log('No result found: ${response['message']}', name: 'TeacherDashboardPage');
-        return null; // Return null if no result exists (marks not yet assigned)
+        return null;
       }
     } catch (e) {
       developer.log('Error fetching result: $e', name: 'TeacherDashboardPage');
@@ -224,66 +227,9 @@ class _TeacherDashboardPageState extends State<TeacherDashboardPage> with Single
                                     itemBuilder: (context, index) {
                                       final subject = assignedSubjects[index];
                                       return Card(
-                                        elevation: 2,
                                         child: ListTile(
                                           title: Text(subject['name'] ?? 'Unnamed Subject'),
-                                          trailing: const Icon(Icons.edit),
-                                          onTap: () async {
-                                            final studentsResponse = await _apiService.getStudentsBySubject(subject['id'].toString());
-                                            developer.log('Students response for subject ${subject['id']}: ${jsonEncode(studentsResponse)}',
-                                                name: 'TeacherDashboardPage');
-                                            if (studentsResponse['success'] != true) {
-                                              _showError(studentsResponse['message'] ?? 'Failed to load students for this subject');
-                                              return;
-                                            }
-                                            final students = (studentsResponse['data'] as List<dynamic>)
-                                                .map((s) => Student.fromJson(s))
-                                                .toList();
-                                            if (students.isEmpty) {
-                                              _showError('No students assigned to this subject');
-                                              return;
-                                            }
-                                            showDialog(
-                                              context: context,
-                                              builder: (ctx) => AlertDialog(
-                                                title: Text('Select Student for ${subject['name']}'),
-                                                content: SizedBox(
-                                                  width: double.maxFinite,
-                                                  child: ListView.builder(
-                                                    shrinkWrap: true,
-                                                    itemCount: students.length,
-                                                    itemBuilder: (ctx, idx) {
-                                                      final student = students[idx];
-                                                      return ListTile(
-                                                        title: Text(student.name),
-                                                        subtitle: Text('Roll No: ${student.rollNo ?? 'N/A'}'),
-                                                        onTap: () async {
-                                                          Navigator.pop(ctx);
-                                                          final result = await _fetchResult(
-                                                            student.id.toString(),
-                                                            subject['id'].toString(),
-                                                            '1', // Default semester
-                                                          );
-                                                          _navigateToAssignMarks(
-                                                            subject['id'].toString(),
-                                                            subject['name'] ?? 'Unnamed Subject',
-                                                            student.id.toString(),
-                                                            result: result,
-                                                          );
-                                                        },
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                                actions: [
-                                                  TextButton(
-                                                    onPressed: () => Navigator.pop(ctx),
-                                                    child: const Text('Cancel'),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          },
+                                          subtitle: Text('ID: ${subject['id']}'),
                                         ),
                                       );
                                     },

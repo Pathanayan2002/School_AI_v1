@@ -23,13 +23,8 @@ class _InwardDetailsDialogState extends State<InwardDetailsDialog> {
   @override
   void initState() {
     super.initState();
-    // Set default values
-    _selectedItemName = widget.availableItemNames.isNotEmpty
-        ? widget.availableItemNames.first
-        : '';
-    _selectedClassGroup = widget.availableClassGroups.isNotEmpty
-        ? widget.availableClassGroups.first
-        : '';
+    _selectedItemName = widget.availableItemNames.isNotEmpty ? widget.availableItemNames.first : '';
+    _selectedClassGroup = widget.availableClassGroups.isNotEmpty ? widget.availableClassGroups.first : '';
   }
 
   @override
@@ -41,8 +36,7 @@ class _InwardDetailsDialogState extends State<InwardDetailsDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Add Inward Entry', style: TextStyle(fontWeight: FontWeight.bold)),
+      title: const Text('Add Inward Entry'),
       content: Form(
         key: _formKey,
         child: Column(
@@ -51,36 +45,25 @@ class _InwardDetailsDialogState extends State<InwardDetailsDialog> {
             DropdownButtonFormField<String>(
               value: _selectedItemName.isNotEmpty ? _selectedItemName : null,
               decoration: const InputDecoration(labelText: 'Item Name'),
-              items: widget.availableItemNames.map((name) {
-                return DropdownMenuItem(value: name, child: Text(name));
-              }).toList(),
+              items: widget.availableItemNames.map((name) => DropdownMenuItem(value: name, child: Text(name))).toList(),
               onChanged: (value) => setState(() => _selectedItemName = value!),
-              validator: (value) =>
-                  (value == null || value.isEmpty) ? 'Please select an item' : null,
+              validator: (value) => value == null || value.isEmpty ? 'Select an item' : null,
             ),
-            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: _selectedClassGroup,
               decoration: const InputDecoration(labelText: 'Class Group'),
-              items: widget.availableClassGroups.map((group) {
-                return DropdownMenuItem(value: group, child: Text(group));
-              }).toList(),
+              items: widget.availableClassGroups.map((group) => DropdownMenuItem(value: group, child: Text(group))).toList(),
               onChanged: (value) => setState(() => _selectedClassGroup = value!),
-              validator: (value) =>
-                  (value == null || value.isEmpty) ? 'Please select a class group' : null,
+              validator: (value) => value == null || value.isEmpty ? 'Select a class group' : null,
             ),
-            const SizedBox(height: 12),
             TextFormField(
               controller: _inwardQtyController,
+              decoration: const InputDecoration(labelText: 'Inward Quantity'),
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Inward Quantity',
-                border: OutlineInputBorder(),
-              ),
               validator: (value) {
-                if (value == null || value.isEmpty) return 'Enter inward quantity';
-                final num? qty = num.tryParse(value);
-                if (qty == null || qty <= 0) return 'Invalid quantity';
+                if (value == null || value.isEmpty) return 'Enter quantity';
+                final qty = num.tryParse(value);
+                if (qty == null || qty <= 0) return 'Enter valid quantity';
                 return null;
               },
             ),

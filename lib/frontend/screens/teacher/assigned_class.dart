@@ -43,21 +43,26 @@ class _TeacherAssignedClassesPageState extends State<TeacherAssignedClassesPage>
         return;
       }
 
+      final schoolId = await _apiService.getCurrentSchoolId();
+      if (schoolId == null) {
+        setState(() {
+          errorMessage = 'School ID not found. Please login again.';
+          isLoading = false;
+        });
+        return;
+      }
+
       final classesResponse = await _apiService.getClassesByTeacherId(teacherId!);
       developer.log('Classes Response: $classesResponse', name: 'TeacherAssignedClassesPage');
 
-      if (classesResponse['success'] == true && classesResponse['data'] != null) {
+      if (classesResponse['success'] && classesResponse['data'] != null) {
         final classList = classesResponse['data'] as List<dynamic>;
-
         classes.clear();
         classStudents.clear();
 
         for (var classJson in classList) {
           final classModel = ClassModel.fromJson(classJson);
-          final studentList = (classJson['students'] as List<dynamic>? ?? [])
-              .map((s) => Student.fromJson(s))
-              .toList();
-
+          final studentList = (classJson['students'] as List<dynamic>?)?.map((s) => Student.fromJson(s)).toList() ?? [];
           classes.add(classModel);
           classStudents[classModel.id] = studentList;
         }
@@ -68,7 +73,7 @@ class _TeacherAssignedClassesPageState extends State<TeacherAssignedClassesPage>
       }
     } catch (e) {
       setState(() {
-        errorMessage = 'Error fetching data: $e';
+        errorMessage = 'Error loading data: $e';
       });
       developer.log('Fetch error: $e', name: 'TeacherAssignedClassesPage');
     } finally {
@@ -79,7 +84,12 @@ class _TeacherAssignedClassesPageState extends State<TeacherAssignedClassesPage>
   }
 
   Future<List<Map<String, dynamic>>> _fetchSubjectsForTeacher() async {
-    final response = await _apiService.getAllSubjects(schoolId: '');
+    final schoolId = await _apiService.getCurrentSchoolId();
+    if (schoolId == null) {
+      developer.log('No school ID found', name: 'TeacherAssignedClassesPage');
+      return [];
+    }
+    final response = await _apiService.getAllSubjects(schoolId: schoolId);
     if (response['success'] && response['data'] != null && teacherId != null) {
       final assignedSubjects = response['data']
           .where((sub) => sub['teacherId']?.toString() == teacherId)
@@ -94,9 +104,9 @@ class _TeacherAssignedClassesPageState extends State<TeacherAssignedClassesPage>
 
   Future<Map<String, dynamic>?> _fetchResult(String studentId, String subjectId, String semester) async {
     try {
-      final response = await _apiService.getResultById(studentId, subjectId,);
+      final response = await _apiService.getResultById(studentId, subjectId);
       developer.log('Fetch result response: $response', name: 'TeacherAssignedClassesPage');
-      if (response['success'] == true && response['data'] != null) {
+      if (response['success'] && response['data'] != null) {
         return response['data'];
       }
       return null;
@@ -133,87 +143,90 @@ class _TeacherAssignedClassesPageState extends State<TeacherAssignedClassesPage>
                       itemBuilder: (context, index) {
                         final classItem = classes[index];
                         final students = classStudents[classItem.id] ?? [];
-                        return ExpansionTile(
-                          title: Text(
-                            'Class ${classItem.name}${classItem.divisions != null && classItem.divisions!.isNotEmpty ? " (${classItem.divisions!.join(", ")})" : ""}',
-                          ),
-                          subtitle: Text('${students.length} student(s)'),
-                          children: students.isEmpty
-                              ? [const ListTile(title: Text('No students in this class'))]
-                              : students.map((student) {
-                                  return ListTile(
-                                    title: Text(student.name),
-                                    subtitle: Text('Roll No: ${student.rollNo ?? 'N/A'}'),
-                                    trailing: const Icon(Icons.edit),
-                                    onTap: () async {
-                                      final subjects = await _fetchSubjectsForTeacher();
-                                      if (subjects.isEmpty) {
-                                        _showError('No subjects assigned to you');
-                                        return;
-                                      }
-                                      showDialog(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          title: Text('Select Subject for ${student.name}'),
-                                          content: SizedBox(
-                                            width: double.maxFinite,
-                                            child: ListView.builder(
-                                              shrinkWrap: true,
-                                              itemCount: subjects.length,
-                                              itemBuilder: (ctx, idx) {
-                                                final subject = subjects[idx];
-                                                return ListTile(
-                                                  title: Text(subject['name'] ?? 'Unnamed Subject'),
-                                                  trailing: FutureBuilder<Map<String, dynamic>?>(
-                                                    future: _fetchResult(
-                                                      student.id.toString(),
-                                                      subject['id'].toString(),
-                                                      '1',
-                                                    ),
-                                                    builder: (context, snapshot) {
-                                                      if (snapshot.connectionState == ConnectionState.waiting) {
-                                                        return const CircularProgressIndicator(strokeWidth: 2);
-                                                      }
-                                                      return snapshot.data != null
-                                                          ? const Icon(Icons.check_circle, color: Colors.green)
-                                                          : const Icon(Icons.add_circle_outline);
-                                                    },
-                                                  ),
-                                                  onTap: () async {
-                                                    final result = await _fetchResult(
-                                                      student.id.toString(),
-                                                      subject['id'].toString(),
-                                                      '1',
-                                                    );
-                                                    Navigator.pop(ctx);
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (_) => AssignMarkPage(
-                                                          subjectId: subject['id'].toString(),
-                                                          subjectName: subject['name'] ?? 'Unnamed Subject',
-                                                          studentId: student.id.toString(),
-                                                          semester: '1',
-                                                          existingResult: result,
-                                                        ),
+                        return Card(
+                          elevation: 2,
+                          child: ExpansionTile(
+                            title: Text(
+                              'Class ${classItem.name}${classItem.divisions != null && classItem.divisions!.isNotEmpty ? " (${classItem.divisions!.join(", ")})" : ""}',
+                            ),
+                            subtitle: Text('${students.length} student(s)'),
+                            children: students.isEmpty
+                                ? [const ListTile(title: Text('No students in this class'))]
+                                : students.map((student) {
+                                    return ListTile(
+                                      title: Text(student.name),
+                                      subtitle: Text('Roll No: ${student.rollNo ?? 'N/A'}'),
+                                      trailing: const Icon(Icons.edit),
+                                      onTap: () async {
+                                        final subjects = await _fetchSubjectsForTeacher();
+                                        if (subjects.isEmpty) {
+                                          _showError('No subjects assigned to you');
+                                          return;
+                                        }
+                                        showDialog(
+                                          context: context,
+                                          builder: (ctx) => AlertDialog(
+                                            title: Text('Select Subject for ${student.name}'),
+                                            content: SizedBox(
+                                              width: double.maxFinite,
+                                              child: ListView.builder(
+                                                shrinkWrap: true,
+                                                itemCount: subjects.length,
+                                                itemBuilder: (ctx, idx) {
+                                                  final subject = subjects[idx];
+                                                  return ListTile(
+                                                    title: Text(subject['name'] ?? 'Unnamed Subject'),
+                                                    trailing: FutureBuilder<Map<String, dynamic>?>(
+                                                      future: _fetchResult(
+                                                        student.id.toString(),
+                                                        subject['id'].toString(),
+                                                        '1',
                                                       ),
-                                                    );
-                                                  },
-                                                );
-                                              },
+                                                      builder: (context, snapshot) {
+                                                        if (snapshot.connectionState == ConnectionState.waiting) {
+                                                          return const CircularProgressIndicator(strokeWidth: 2);
+                                                        }
+                                                        return snapshot.data != null
+                                                            ? const Icon(Icons.check_circle, color: Colors.green)
+                                                            : const Icon(Icons.add_circle_outline);
+                                                      },
+                                                    ),
+                                                    onTap: () async {
+                                                      final result = await _fetchResult(
+                                                        student.id.toString(),
+                                                        subject['id'].toString(),
+                                                        '1',
+                                                      );
+                                                      Navigator.pop(ctx);
+                                                      Navigator.push(
+                                                        context,
+                                                        MaterialPageRoute(
+                                                          builder: (_) => AssignMarkPage(
+                                                            subjectId: subject['id'].toString(),
+                                                            subjectName: subject['name'] ?? 'Unnamed Subject',
+                                                            studentId: student.id.toString(),
+                                                            semester: '1',
+                                                            existingResult: result,
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
+                                                  );
+                                                },
+                                              ),
                                             ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () => Navigator.pop(ctx),
+                                                child: const Text('Cancel'),
+                                              ),
+                                            ],
                                           ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(ctx),
-                                              child: const Text('Cancel'),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                  );
-                                }).toList(),
+                                        );
+                                      },
+                                    );
+                                  }).toList(),
+                          ),
                         );
                       },
                     ),

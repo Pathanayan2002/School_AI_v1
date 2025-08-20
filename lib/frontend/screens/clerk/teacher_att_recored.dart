@@ -1,189 +1,167 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:excel/excel.dart';
+import 'package:universal_io/io.dart' show File;
 import 'package:path_provider/path_provider.dart';
-import 'dart:io';
+import 'package:share_plus/share_plus.dart';
 import '../services/api_client.dart';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 
-class AttendanceRecordScreen extends StatefulWidget {
-  const AttendanceRecordScreen({super.key});
+class ClerkTeacherAttendanceRecordPage extends StatefulWidget {
+  const ClerkTeacherAttendanceRecordPage({super.key});
 
   @override
-  State<AttendanceRecordScreen> createState() => _AttendanceRecordScreenState();
+  State<ClerkTeacherAttendanceRecordPage> createState() => _ClerkTeacherAttendanceRecordPageState();
 }
 
-class _AttendanceRecordScreenState extends State<AttendanceRecordScreen> {
+class _ClerkTeacherAttendanceRecordPageState extends State<ClerkTeacherAttendanceRecordPage> {
   final ApiService _apiService = ApiService();
-  List<Map<String, dynamic>> teacherAttendances = [];
-  List<Map<String, dynamic>> filteredTeachers = [];
-  bool isLoading = false;
-  String? userRole;
-  String selectedMonth = 'All';
-  String selectedYear = DateTime.now().year.toString();
+  String? _schoolId;
+  List<Map<String, dynamic>> _teacherAttendances = [];
+  List<Map<String, dynamic>> _filteredAttendances = [];
+  String _selectedMonthYear = DateFormat('MMMM yyyy').format(DateTime.now());
+  bool _isLoading = false;
+  String? _errorMessage;
+  bool _isExporting = false;
 
-  final months = [
-    'All', 'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
+  final List<String> _monthYears = _generateMonthYears();
+
+  static List<String> _generateMonthYears() {
+    final now = DateTime.now();
+    final currentYear = now.year;
+    final months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    final List<String> monthYears = [];
+    for (var year = currentYear - 1; year <= currentYear; year++) {
+      for (var month in months) {
+        monthYears.add('$month $year');
+      }
+    }
+    return monthYears;
+  }
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadUserData();
-    });
+    _loadInitialData();
   }
 
-  Future<void> _loadUserData() async {
-    setState(() => isLoading = true);
+  Future<void> _loadInitialData() async {
+    setState(() => _isLoading = true);
     try {
-      final userId = await _apiService.getCurrentUserId();
-      if (userId != null) {
-        final userResponse = await _apiService.getUserById(userId);
-        if (userResponse != null && userResponse['data'] != null) {
-          userRole = userResponse['data']['role']?.toString().toLowerCase();
-        }
+      await _apiService.init();
+      _schoolId = await _apiService.getCurrentSchoolId();
+
+      if (_schoolId == null) {
+        setState(() {
+          _errorMessage = 'शाळा सापडली नाही. कृपया पुन्हा लॉग इन करा.';
+          _isLoading = false;
+        });
+        return;
       }
-      await _loadAttendances();
-    } catch (e) {
-      _showSnackBar('Error loading user data: $e');
-    } finally {
-      setState(() => isLoading = false);
-    }
-  }
 
-  Future<void> _loadAttendances() async {
-    try {
       final response = await _apiService.getAllAttendances();
-      if (response != null) {
-        teacherAttendances = List<Map<String, dynamic>>.from(
-          response['teacherAttendances'] ?? [],
-        );
-        _filterAttendances();
+      if (kDebugMode) {
+        debugPrint('Attendance Response: $response');
+      }
+
+      if (response['success'] && response['data'] != null) {
+        setState(() {
+          _teacherAttendances = List<Map<String, dynamic>>.from(response['data']['teacherAttendances'] ?? []);
+          _filterAttendances();
+          _isLoading = false;
+          _errorMessage = _teacherAttendances.isEmpty
+              ? 'या शाळेसाठी शिक्षक उपस्थिती रेकॉर्ड सापडले नाहीत.'
+              : null;
+        });
       } else {
-        _showSnackBar('Failed to load attendance records');
+        setState(() {
+          _errorMessage = response['message'] ?? 'उपस्थिती रेकॉर्ड मिळवण्यात अयशस्वी.';
+          _isLoading = false;
+        });
       }
     } catch (e) {
-      _showSnackBar('Error loading attendance records: $e');
+      setState(() {
+        _errorMessage = 'डेटा लोड करण्यात त्रुटी: $e';
+        _isLoading = false;
+      });
+      if (kDebugMode) {
+        debugPrint('Error in _loadInitialData: $e');
+      }
     }
   }
 
-  /// FIXED FILTER — Shows all on first load, trims and ignores case
   void _filterAttendances() {
     setState(() {
-      filteredTeachers = teacherAttendances.where((teacher) {
-        final monthString = (teacher['month'] ?? '').toString().trim();
-        final parts = monthString.split(RegExp(r'\s+')); // split by space(s)
-
-        // If month format isn't "Month Year", just keep the record
-        if (parts.length != 2) return true;
-
-        final recordMonth = parts[0].trim();
-        final recordYear = parts[1].trim();
-
-        // If year field is empty, don't filter by year
-        if (selectedYear.trim().isEmpty) {
-          if (selectedMonth == 'All') return true;
-          return recordMonth.toLowerCase() == selectedMonth.toLowerCase();
-        }
-
-        // Year must match
-        if (recordYear != selectedYear.trim()) return false;
-
-        // Month match or "All"
-        if (selectedMonth == 'All' || selectedMonth.trim().isEmpty) return true;
-
-        return recordMonth.toLowerCase() == selectedMonth.toLowerCase();
+      _filteredAttendances = _teacherAttendances.where((attendance) {
+        final monthString = (attendance['month'] ?? '').toString().trim();
+        return monthString == _selectedMonthYear;
       }).toList();
+      _errorMessage = _filteredAttendances.isEmpty
+          ? 'निवडलेल्या महिन्यासाठी शिक्षक उपस्थिती रेकॉर्ड सापडले नाहीत.'
+          : null;
     });
   }
 
-  void _showSnackBar(String message, {Color color = Colors.red}) {
-    if (mounted) {
+  Future<void> _exportToExcel() async {
+    if (_filteredAttendances.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message, style: const TextStyle(color: Colors.white)),
-          backgroundColor: color,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 3),
-        ),
+        const SnackBar(content: Text('No data available to export.')),
       );
-    }
-  }
-
-  Future<void> _exportToExcel(List<Map<String, dynamic>> teachers, {bool isYearly = false}) async {
-    if (teachers.isEmpty) {
-      _showSnackBar('No attendance records available for ${isYearly ? 'year' : selectedMonth}');
       return;
     }
 
-    setState(() => isLoading = true);
+    setState(() => _isExporting = true);
 
     try {
       final excel = Excel.createExcel();
-      final sheetName = isYearly ? 'Yearly_Attendance' : 'Teacher_Attendance_$selectedMonth';
-      final sheet = excel[sheetName.length > 31 ? sheetName.substring(0, 31) : sheetName];
+      final sheet = excel['Teacher_Attendance'];
 
-      final headerStyle = CellStyle(
-        bold: true,
-        backgroundColorHex: ExcelColor.fromHexString('#4CAF50'),
-        fontColorHex: ExcelColor.fromHexString('#FFFFFF'),
-        horizontalAlign: HorizontalAlign.Center,
-        verticalAlign: VerticalAlign.Center,
-      );
-
-      final headers = [
+      sheet.appendRow([
         TextCellValue('Teacher ID'),
         TextCellValue('Name'),
         TextCellValue('Month'),
-        TextCellValue('Present Days'),
         TextCellValue('Total Days'),
+        TextCellValue('Present Days'),
         TextCellValue('Attendance %'),
-      ];
+      ]);
 
-      sheet.appendRow(headers);
-      sheet.row(0).forEach((cell) {
-        if (cell != null) cell.cellStyle = headerStyle;
-      });
+      for (var record in _filteredAttendances) {
+        final id = record['teacherId']?.toString() ?? 'N/A';
+        final name = record['teachers']?['name']?.toString() ?? 'Unknown';
+        final totalDays = record['totalDays'] as int? ?? 0;
+        final presentDays = record['presentDays'] as int? ?? 0;
+        final percentage = totalDays > 0 ? ((presentDays / totalDays) * 100).toStringAsFixed(2) : '0.00';
 
-      for (var teacher in teachers) {
-        final id = teacher['teacherId']?.toString() ?? 'N/A';
-        final name = teacher['teachers']?['name']?.toString() ?? 'Unknown';
-        final month = teacher['month']?.toString() ?? '-';
-        final present = teacher['presentDays'] as int? ?? 0;
-        final total = teacher['totalDays'] as int? ?? 0;
-        final percent = total > 0 ? (present / total) * 100 : 0.0;
-
-        final row = [
+        sheet.appendRow([
           TextCellValue(id),
           TextCellValue(name),
-          TextCellValue(month),
-          IntCellValue(present),
-          IntCellValue(total),
-          DoubleCellValue(percent / 100),
-        ];
-
-        sheet.appendRow(row);
-        final lastRow = sheet.maxRows - 1;
-        final percentCell = sheet.cell(CellIndex.indexByColumnRow(
-            columnIndex: 5, rowIndex: lastRow));
-        percentCell.cellStyle = CellStyle(numberFormat: NumFormat.custom(formatCode: '0.00%'));
+          TextCellValue(record['month']?.toString() ?? _selectedMonthYear),
+          TextCellValue(totalDays.toString()),
+          TextCellValue(presentDays.toString()),
+          TextCellValue('$percentage%'),
+        ]);
       }
 
-      final bytes = await excel.encode();
-      if (bytes == null) throw Exception('Failed to generate Excel file');
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'Teacher_Attendance_${_selectedMonthYear.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      final filePath = '${directory.path}/$fileName';
+      final file = File(filePath);
+      await file.writeAsBytes(excel.encode()!);
 
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName = isYearly
-          ? 'Teacher_Yearly_Attendance_${selectedYear}_${DateTime.now().toIso8601String().split('T')[0]}.xlsx'
-          : 'Teacher_Attendance_${selectedMonth.replaceAll(' ', '_')}_${DateTime.now().toIso8601String().split('T')[0]}.xlsx';
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsBytes(bytes);
+      await Share.shareXFiles([XFile(filePath)], text: 'Teacher Attendance Report');
 
-      _showSnackBar('Excel file saved to ${file.path}', color: Colors.green);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Excel file exported and shared: $fileName')),
+      );
     } catch (e) {
-      _showSnackBar('Failed to export Excel file: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error exporting to Excel: $e')),
+      );
     } finally {
-      setState(() => isLoading = false);
+      setState(() => _isExporting = false);
     }
   }
 
@@ -191,151 +169,143 @@ class _AttendanceRecordScreenState extends State<AttendanceRecordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Teacher Attendance Records'),
+        title: const Text(
+          'Clerk Teacher Attendance Records',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        backgroundColor: Colors.blueAccent,
+        elevation: 0,
         centerTitle: true,
-        backgroundColor: Colors.green.shade700,
+        actions: [
+          IconButton(
+            icon: _isExporting
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.download),
+            onPressed: _isExporting ? null : _exportToExcel,
+            tooltip: 'Export to Excel',
+          ),
+        ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.green))
-          : Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  // Filter Controls
-                  Row(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.blueAccent))
+          : _errorMessage != null
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: selectedMonth,
-                          decoration: const InputDecoration(
-                            labelText: 'Month',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: months.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                          onChanged: (value) {
-                            if (value != null) {
-                              selectedMonth = value;
-                              _filterAttendances();
-                            }
-                          },
-                        ),
+                      Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red, fontSize: 16),
+                        textAlign: TextAlign.center,
                       ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 100,
-                        child: TextFormField(
-                          initialValue: selectedYear,
-                          decoration: const InputDecoration(
-                            labelText: 'Year',
-                            border: OutlineInputBorder(),
-                          ),
-                          keyboardType: TextInputType.number,
-                          onChanged: (value) {
-                            selectedYear = value;
-                            _filterAttendances();
-                          },
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          _loadInitialData();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
+                        child: const Text('Retry'),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-
-                  // Download Buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _exportToExcel(filteredTeachers),
-                          icon: const Icon(Icons.download),
-                          label: const Text('Month'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _exportToExcel(teacherAttendances, isYearly: true),
-                          icon: const Icon(Icons.download),
-                          label: const Text('Yearly'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-
-                  // Attendance List
-                  Expanded(
-                    child: filteredTeachers.isEmpty
-                        ? const Center(child: Text('No teacher attendance records'))
-                        : ListView.separated(
-                            itemCount: filteredTeachers.length,
-                            separatorBuilder: (_, __) => const Divider(),
-                            itemBuilder: (context, index) {
-                              final attendance = filteredTeachers[index];
-                              final percent = (attendance['totalDays'] != null &&
-                                      attendance['totalDays'] > 0)
-                                  ? ((attendance['presentDays'] / attendance['totalDays']) * 100)
-                                      .toStringAsFixed(1)
-                                  : '0.0';
-
-                              return ListTile(
-                                title: Text(
-                                  attendance['teachers']?['name'] ?? 'Unknown',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold, color: Colors.green),
-                                ),
-                                subtitle: Text(
-                                  'ID: ${attendance['teacherId']} • Month: ${attendance['month']}\n'
-                                  'Present: ${attendance['presentDays']} / ${attendance['totalDays']} days\n'
-                                  'Attendance: $percent%',
-                                ),
-                                trailing: (userRole == 'admin' || userRole == 'clerk')
-                                    ? IconButton(
-                                        icon: const Icon(Icons.delete, color: Colors.red),
-                                        onPressed: () async {
-                                          final confirm = await showDialog<bool>(
-                                            context: context,
-                                            builder: (_) => AlertDialog(
-                                              title: const Text('Delete Attendance'),
-                                              content: const Text(
-                                                  'Are you sure you want to delete this record?'),
-                                              actions: [
-                                                TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(context, false),
-                                                    child: const Text('Cancel')),
-                                                TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(context, true),
-                                                    child: const Text('Confirm')),
-                                              ],
-                                            ),
-                                          );
-                                          if (confirm == true) {
-                                            setState(() => isLoading = true);
-                                            final response = await _apiService
-                                                .deleteAttendance(attendance['id'].toString());
-                                            setState(() => isLoading = false);
-                                            if (response != null && response['success'] == true) {
-                                              _showSnackBar('Deleted successfully',
-                                                  color: Colors.green);
-                                              await _loadAttendances();
-                                            } else {
-                                              _showSnackBar(
-                                                  'Failed to delete: ${response?['message'] ?? 'Unknown error'}');
-                                            }
-                                          }
-                                        },
-                                      )
-                                    : null,
-                              );
-                            },
+                )
+              : SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                            child: DropdownButtonFormField<String>(
+                              value: _selectedMonthYear,
+                              decoration: const InputDecoration(
+                                labelText: 'Select Month and Year',
+                                labelStyle: TextStyle(color: Colors.blueAccent),
+                                border: InputBorder.none,
+                              ),
+                              items: _monthYears.map((monthYear) {
+                                return DropdownMenuItem<String>(
+                                  value: monthYear,
+                                  child: Text(monthYear),
+                                );
+                              }).toList(),
+                              onChanged: (newValue) {
+                                setState(() {
+                                  _selectedMonthYear = newValue!;
+                                  _filteredAttendances = [];
+                                  _errorMessage = null;
+                                  _filterAttendances();
+                                });
+                              },
+                            ),
                           ),
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          'Teacher Attendance Records (${_filteredAttendances.length})',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        _filteredAttendances.isEmpty
+                            ? Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                                child: Center(
+                                  child: Text(
+                                    _errorMessage ?? 'No teacher attendance records found for the selected month.',
+                                    style: const TextStyle(fontSize: 16, color: Colors.grey),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              )
+                            : SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  columnSpacing: 16,
+                                  columns: const [
+                                    DataColumn(label: Text('Teacher ID', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Name', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Month', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Total Days', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Present Days', style: TextStyle(fontWeight: FontWeight.bold))),
+                                    DataColumn(label: Text('Attendance %', style: TextStyle(fontWeight: FontWeight.bold))),
+                                  ],
+                                  rows: _filteredAttendances.map((record) {
+                                    final id = record['teacherId']?.toString() ?? 'N/A';
+                                    final name = record['teachers']?['name']?.toString() ?? 'Unknown';
+                                    final totalDays = record['totalDays'] as int? ?? 0;
+                                    final presentDays = record['presentDays'] as int? ?? 0;
+                                    final percentage = totalDays > 0 ? ((presentDays / totalDays) * 100).toStringAsFixed(2) : '0.00';
+
+                                    return DataRow(cells: [
+                                      DataCell(Text(id)),
+                                      DataCell(Text(name)),
+                                      DataCell(Text(record['month']?.toString() ?? _selectedMonthYear)),
+                                      DataCell(Text(totalDays.toString())),
+                                      DataCell(Text(presentDays.toString())),
+                                      DataCell(Text('$percentage%')),
+                                    ]);
+                                  }).toList(),
+                                ),
+                              ),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-            ),
+                ),
     );
   }
 }
