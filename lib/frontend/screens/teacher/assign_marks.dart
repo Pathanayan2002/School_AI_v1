@@ -49,6 +49,7 @@ class _AssignMarkPageState extends State<AssignMarkPage> {
   bool isLoading = false;
   String? errorMessage;
   String? teacherId;
+  String? studentName; // Variable to store student's name
   Map<String, dynamic>? existingResult;
   late String selectedSemester;
 
@@ -71,53 +72,81 @@ class _AssignMarkPageState extends State<AssignMarkPage> {
 
     _hydrateFromExisting();
     _validateTeacherAccess();
+    _fetchStudentName();
     _recomputeTotals();
   }
 
   void _hydrateFromExisting() {
-    if (existingResult != null) {
-      final subjectsMap = (existingResult!['subjects'] ?? {}) as Map? ?? {};
-      final subjectData = subjectsMap[widget.subjectId];
+  if (existingResult != null) {
+    final subjectsMap = (existingResult!['subjects'] ?? {}) as Map? ?? {};
+    final subjectData = subjectsMap[widget.subjectId];
 
-      Map<String, dynamic>? _pickFormative(dynamic src) {
-        if (src is Map) {
-          if (src['formativeAssessment'] is Map) return Map<String, dynamic>.from(src['formativeAssessment']);
-          if (src['formativeAssesment'] is Map) return Map<String, dynamic>.from(src['formativeAssesment']);
-        }
-        return null;
+    Map<String, dynamic>? _pickFormative(dynamic src) {
+      if (src is Map) {
+        if (src['formativeAssessment'] is Map) return Map<String, dynamic>.from(src['formativeAssessment']);
+        if (src['formativeAssesment'] is Map) return Map<String, dynamic>.from(src['formativeAssesment']);
       }
+      return null;
+    }
 
-      Map<String, dynamic>? _pickSummative(dynamic src) {
-        if (src is Map) {
-          if (src['summativeAssessment'] is Map) return Map<String, dynamic>.from(src['summativeAssessment']);
-          if (src['summativeAssesment'] is Map) return Map<String, dynamic>.from(src['summativeAssesment']);
-        }
-        return null;
+    Map<String, dynamic>? _pickSummative(dynamic src) {
+      if (src is Map) {
+        if (src['summativeAssessment'] is Map) return Map<String, dynamic>.from(src['summativeAssessment']);
+        if (src['summativeAssesment'] is Map) return Map<String, dynamic>.from(src['summativeAssesment']);
       }
+      return null;
+    }
 
-      if (subjectData != null) {
-        final formative = _pickFormative(subjectData) ?? {};
-        final summative = _pickSummative(subjectData) ?? {};
+    if (subjectData != null) {
+      final formative = _pickFormative(subjectData) ?? {};
+      final summative = _pickSummative(subjectData) ?? {};
 
-        dailyObservationController.text = (formative['dailyObservation'] ?? '').toString();
-        oralWorkController.text = (formative['oralWork'] ?? '').toString();
-        practicalExperimentsController.text = (formative['practicalExperiments'] ?? '').toString();
-        activitiesController.text = (formative['activities'] ?? '').toString();
-        projectController.text = (formative['project'] ?? '').toString();
-        examinationWrittenController.text = (formative['examinationWritten'] ?? '').toString();
-        selfStudyController.text = (formative['selfStudy'] ?? '').toString();
-        otherController.text = (formative['other'] ?? '').toString();
+      dailyObservationController.text = (formative['dailyObservation'] ?? '').toString();
+      oralWorkController.text = (formative['oralWork'] ?? '').toString();
+      practicalExperimentsController.text = (formative['practicalExperiments'] ?? '').toString();
+      activitiesController.text = (formative['activities'] ?? '').toString();
+      projectController.text = (formative['project'] ?? '').toString();
+      examinationWrittenController.text = (formative['examinationWritten'] ?? '').toString();
+      selfStudyController.text = (formative['selfStudy'] ?? '').toString();
+      otherController.text = (formative['other'] ?? '').toString();
 
-        oralController.text = (summative['oral'] ?? '').toString();
-        practicalController.text = (summative['practical'] ?? '').toString();
-        writtenController.text = (summative['written'] ?? '').toString();
+      oralController.text = (summative['oral'] ?? '').toString();
+      practicalController.text = (summative['practical'] ?? '').toString();
+      writtenController.text = (summative['written'] ?? '').toString();
+    }
+
+    // Load specialProgress, hobbies, and areasOfImprovement from root level
+    specialProgressController.text = (existingResult!['specialProgress'] ?? '').toString();
+    hobbiesController.text = (existingResult!['hobbies'] ?? '').toString();
+    areasOfImprovementController.text = (existingResult!['areasOfImprovement'] ?? '').toString();
+  }
+}
+  Future<void> _fetchStudentName() async {
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      final response = await _apiService.getStudentById(widget.studentId);
+      if (response['success'] == true && response['data'] != null) {
+        setState(() {
+          studentName = response['data']['name']?.toString() ?? 'Unknown Student';
+        });
+      } else {
+        setState(() {
+          errorMessage = 'Failed to fetch student name';
+        });
       }
-
-      final semesterWise = existingResult!['semesterWise'] as Map? ?? {};
-      final semesterData = semesterWise[selectedSemester] as Map? ?? {};
-      specialProgressController.text = (semesterData['specialProgress'] ?? '').toString();
-      hobbiesController.text = (semesterData['hobbies'] ?? '').toString();
-      areasOfImprovementController.text = (semesterData['areasOfImprovement'] ?? '').toString();
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Error fetching student name: $e';
+      });
+      developer.log('Error fetching student name: $e', name: 'AssignMarkPage');
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
     }
   }
 
@@ -231,102 +260,98 @@ class _AssignMarkPageState extends State<AssignMarkPage> {
     return 'F';
   }
 
-  Future<void> _submitMarks() async {
-    if (!_formKey.currentState!.validate() || errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please correct the errors before submitting'), backgroundColor: Colors.red),
-      );
-      return;
-    }
-
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    try {
-      if (widget.studentId.isEmpty) throw Exception('Student ID is missing');
-      final schoolId = await _apiService.getCurrentSchoolId();
-      if (schoolId == null || schoolId.isEmpty) throw Exception('School ID is missing');
-      if (selectedSemester.isEmpty) throw Exception('Semester is missing');
-
-      final formative = _formativeMap();
-      final summative = _summativeMap();
-
-      final total = formative.values.fold<num>(0, (a, b) => a + b) +
-          summative.values.fold<num>(0, (a, b) => a + b);
-      final grade = _calculateGrade(total.toDouble());
-
-      final subjectNode = {
-        'subjectName': widget.subjectName,
-        'formative': formativeTotal,
-        'summative': summativeTotal,
-        'formativeAssessment': formative,
-        'summativeAssessment': summative,
-        'formativeAssesment': formative,
-        'summativeAssesment': summative,
-        'total': total,
-        'grade': grade,
-      };
-
-      final subjectsFlat = {
-        widget.subjectId: subjectNode,
-      };
-
-      final semesterWiseNode = {
-        'subjects': subjectsFlat,
-        'specialProgress': specialProgressController.text.trim(),
-        'hobbies': hobbiesController.text.trim(),
-        'areasOfImprovement': areasOfImprovementController.text.trim(),
-      };
-
-      final payload = {
-        'studentId': widget.studentId,
-        'schoolId': schoolId,
-        'semester': selectedSemester,
-        'subjects': subjectsFlat,
-        'semesterWise': {selectedSemester: semesterWiseNode},
-        'specialProgress': specialProgressController.text.trim(),
-        'hobbies': hobbiesController.text.trim(),
-        'areasOfImprovement': areasOfImprovementController.text.trim(),
-      };
-
-      developer.log('Submitting payload: ${jsonEncode(payload)}', name: 'AssignMarkPage');
-
-      Map<String, dynamic> response;
-      if (existingResult != null && (existingResult!['id'] != null)) {
-        response = await _apiService.updateResult(payload, id: existingResult!['id'].toString());
-      } else {
-        response = await _apiService.createResult(payload);
-      }
-
-      if (response['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Marks and details saved'), backgroundColor: Colors.green),
-        );
-        Navigator.pop(context, true);
-      } else {
-        setState(() {
-          errorMessage = response['message'] ?? 'Failed to save marks';
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(errorMessage!), backgroundColor: Colors.red),
-        );
-      }
-    } catch (e) {
-      setState(() {
-        errorMessage = 'Error: $e';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
-      developer.log('Submit error: $e', name: 'AssignMarkPage');
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
-    }
+ Future<void> _submitMarks() async {
+  if (!_formKey.currentState!.validate() || errorMessage != null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Please correct the errors before submitting'), backgroundColor: Colors.red),
+    );
+    return;
   }
+
+  setState(() {
+    isLoading = true;
+    errorMessage = null;
+  });
+
+  try {
+    if (widget.studentId.isEmpty) throw Exception('Student ID is missing');
+    final schoolId = await _apiService.getCurrentSchoolId();
+    if (schoolId == null || schoolId.isEmpty) throw Exception('School ID is missing');
+    if (selectedSemester.isEmpty) throw Exception('Semester is missing');
+
+    final formative = _formativeMap();
+    final summative = _summativeMap();
+
+    final total = formative.values.fold<num>(0, (a, b) => a + b) +
+        summative.values.fold<num>(0, (a, b) => a + b);
+    final grade = _calculateGrade(total.toDouble());
+
+    final subjectNode = {
+      'subjectName': widget.subjectName,
+      'formative': formativeTotal,
+      'summative': summativeTotal,
+      'formativeAssessment': formative,
+      'summativeAssessment': summative,
+      'formativeAssesment': formative, // Keep for backward compatibility
+      'summativeAssesment': summative, // Keep for backward compatibility
+      'total': total,
+      'grade': grade,
+    };
+
+    final subjectsFlat = {
+      widget.subjectId: subjectNode,
+    };
+
+    final payload = {
+      "specialProgress": specialProgressController.text.trim(),
+      "hobbies": hobbiesController.text.trim(),
+      "areasOfImprovement": areasOfImprovementController.text.trim(),
+      'studentId': widget.studentId,
+      'schoolId': schoolId,
+      'semester': selectedSemester,
+      'subjects': subjectsFlat,
+      'specialProgress': specialProgressController.text.trim(),
+      'hobbies': hobbiesController.text.trim(),
+      'areasOfImprovement': areasOfImprovementController.text.trim(),
+    };
+
+    developer.log('Submitting payload: ${jsonEncode(payload)}', name: 'AssignMarkPage');
+
+    Map<String, dynamic> response;
+    if (existingResult != null && (existingResult!['id'] != null)) {
+      response = await _apiService.updateResult(payload, id: existingResult!['id'].toString());
+    } else {
+      response = await _apiService.createResult(payload);
+    }
+
+    if (response['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Marks and details saved'), backgroundColor: Colors.green),
+      );
+      Navigator.pop(context, true);
+    } else {
+      setState(() {
+        errorMessage = response['message'] ?? 'Failed to save marks';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage!), backgroundColor: Colors.red),
+      );
+    }
+  } catch (e) {
+    setState(() {
+      errorMessage = 'Error: $e';
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+    );
+    developer.log('Submit error: $e', name: 'AssignMarkPage');
+  } finally {
+    setState(() {
+      isLoading = false;
+    });
+  }
+}
+
 
   @override
   Widget build(BuildContext context) {
@@ -457,7 +482,8 @@ class _AssignMarkPageState extends State<AssignMarkPage> {
                   Text(widget.subjectName,
                       style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
-                  Text('Student ID: ${widget.studentId}  •  Subject ID: ${widget.subjectId}',
+                  Text(
+                      'Student: ${studentName ?? 'Loading...'}',
                       style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
                 ],
               ),

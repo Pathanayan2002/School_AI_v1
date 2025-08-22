@@ -95,161 +95,160 @@ class _ManageSubjectsScreenState extends State<ManageSubjectsScreen> {
     );
   }
 
-  void _showAddSubjectDialog() {
-    String newSubjectName = '';
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Add New Subject'),
-            content: TextField(
-              decoration: const InputDecoration(
-                labelText: 'Subject Name',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) => newSubjectName = value.trim(),
+ void _showAddSubjectDialog() {
+  String newSubjectName = '';
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Add New Subject'),
+          content: TextField(
+            decoration: const InputDecoration(
+              labelText: 'Subject Name',
+              border: OutlineInputBorder(),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                ),
-                onPressed: _isSubmitting
-                    ? null
-                    : () async {
-                        if (newSubjectName.isEmpty) {
-                          _showMessage("Subject name cannot be empty",
-                              isError: true);
-                          return;
-                        }
-
-                        setDialogState(() => _isSubmitting = true);
-                        final result = await _apiService.registerSubject(
-                          name: newSubjectName,
-                          subjectName: '',
-                          classId: '',
-                          schoolId: '',
-                        );
-                        setDialogState(() => _isSubmitting = false);
-
-                        debugPrint("Add Subject Response: $result");
-
-                        if (_isSuccess(result)) {
-                          setState(() {
-                            _subjects.add({
-                              "id": result['id'] ??
-                                  DateTime.now().millisecondsSinceEpoch,
-                              "name": newSubjectName,
-                            });
-                            _filteredSubjects = _subjects;
-                          });
-                          _showMessage("Subject added successfully");
-                          Navigator.pop(context);
-                        } else {
-                          _showMessage(
-                            result['message']?.toString() ??
-                                "Failed to add subject",
-                            isError: true,
-                          );
-                        }
-                      },
-                child: _isSubmitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text('Add'),
-              ),
-            ],
+            onChanged: (value) => newSubjectName = value.trim(),
           ),
-        );
-      },
-    );
-  }
-
-  void _showEditSubjectDialog(int subjectId, String currentName) {
-    final TextEditingController nameController =
-        TextEditingController(text: currentName);
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Edit Subject'),
-            content: TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: "Subject Name"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Cancel"),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple,
               ),
-              ElevatedButton(
-                onPressed: _isSubmitting
-                    ? null
-                    : () async {
-                        final updatedName = nameController.text.trim();
-                        if (updatedName.isEmpty) {
-                          _showMessage("Subject name cannot be empty",
-                              isError: true);
-                          return;
-                        }
+              onPressed: _isSubmitting
+                  ? null
+                  : () async {
+                      if (newSubjectName.isEmpty) {
+                        _showMessage("Subject name cannot be empty",
+                            isError: true);
+                        return;
+                      }
 
-                        setDialogState(() => _isSubmitting = true);
-                        final result = await _apiService.updateSubject(
-                          id: subjectId.toString(),
-                          name: updatedName,
-                          subjectName: '',
-                          classId: '',
-                          schoolId: '',
-                        );
-                        setDialogState(() => _isSubmitting = false);
+                      setDialogState(() => _isSubmitting = true);
+                      final schoolId = await _apiService.getCurrentSchoolId() ?? '';
+                      final result = await _apiService.registerSubject(
+                        name: newSubjectName,
+                        subjectName: newSubjectName, // Use same as name if backend expects it
+                        classId: '', // Provide classId if required
+                        schoolId: schoolId,
+                      );
+                      setDialogState(() => _isSubmitting = false);
 
-                        debugPrint("Update Subject Response: $result");
+                      debugPrint("Add Subject Response: $result");
 
-                        if (_isSuccess(result)) {
-                          setState(() {
-                            final index = _subjects
-                                .indexWhere((subj) => subj['id'] == subjectId);
-                            if (index != -1) {
-                              _subjects[index]['name'] = updatedName;
-                            }
-                            _filteredSubjects = _subjects;
+                      if (_isSuccess(result)) {
+                        setState(() {
+                          _subjects.add({
+                            "id": result['data']?['id'] ??
+                                DateTime.now().millisecondsSinceEpoch,
+                            "name": newSubjectName,
                           });
-                          _showMessage("Subject updated successfully");
-                          Navigator.pop(context);
-                        } else {
-                          _showMessage(
-                            result['message']?.toString() ??
-                                "Failed to update subject",
-                            isError: true,
-                          );
-                        }
-                      },
-                child: _isSubmitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Text("Save"),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+                          _filteredSubjects = _subjects;
+                        });
+                        _showMessage("Subject added successfully");
+                        Navigator.pop(context);
+                      } else {
+                        _showMessage(
+                          result['message']?.toString() ?? "Failed to add subject",
+                          isError: true,
+                        );
+                      }
+                    },
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Add'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
+void _showEditSubjectDialog(int subjectId, String currentName) {
+  final TextEditingController nameController =
+      TextEditingController(text: currentName);
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Edit Subject'),
+          content: TextField(
+            controller: nameController,
+            decoration: const InputDecoration(labelText: "Subject Name"),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: _isSubmitting
+                  ? null
+                  : () async {
+                      final updatedName = nameController.text.trim();
+                      if (updatedName.isEmpty) {
+                        _showMessage("Subject name cannot be empty",
+                            isError: true);
+                        return;
+                      }
+
+                      setDialogState(() => _isSubmitting = true);
+                      final schoolId = await _apiService.getCurrentSchoolId() ?? '';
+                      final result = await _apiService.updateSubject(
+                        id: subjectId.toString(),
+                        name: updatedName,
+                        subjectName: updatedName, // Use same as name if backend expects it
+                        classId: '', // Provide classId if required
+                        schoolId: schoolId,
+                      );
+                      setDialogState(() => _isSubmitting = false);
+
+                      debugPrint("Update Subject Response: $result");
+
+                      if (_isSuccess(result)) {
+                        setState(() {
+                          final index = _subjects
+                              .indexWhere((subj) => subj['id'] == subjectId);
+                          if (index != -1) {
+                            _subjects[index]['name'] = updatedName;
+                          }
+                          _filteredSubjects = _subjects;
+                        });
+                        _showMessage("Subject updated successfully");
+                        Navigator.pop(context);
+                      } else {
+                        _showMessage(
+                          result['message']?.toString() ?? "Failed to update subject",
+                          isError: true,
+                        );
+                      }
+                    },
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text("Save"),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
   void _confirmDeleteSubject(int subjectId, String subjectName) {
     showDialog(
       context: context,

@@ -40,6 +40,15 @@ class _ManageUserState extends State<ManageUser> {
     try {
       final response = await _apiService.getUserById(userId);
       if (!mounted) return;
+
+      if (response is! Map || response['success'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid server response')),
+        );
+        Navigator.pop(context);
+        return;
+      }
+
       if (response['success'] &&
           ['Admin', 'Clerk'].contains(response['data']['role']?.toString())) {
         await _fetchUsers();
@@ -62,17 +71,36 @@ class _ManageUserState extends State<ManageUser> {
   Future<void> _fetchUsers() async {
     setState(() => _isLoading = true);
     try {
-      final result = await _apiService.getAllUsers(schoolId: '');
+      final schoolId = await _apiService.getCurrentSchoolId();
+      if (schoolId == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('School ID not found')),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final result = await _apiService.getAllUsers(schoolId: schoolId);
       if (!mounted) return;
+
+      if (result is! Map || result['success'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Invalid response from server')),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
       if (result['success'] && result['data'] is List) {
         setState(() {
           users = List<Map<String, dynamic>>.from(result['data'])
               .map((user) {
-            return {
-              ...user,
-              'id': user['id']?.toString() ?? user['_id']?.toString()
-            };
-          }).where((user) => user['enrollmentId'] != null).toList();
+                return {
+                  ...user,
+                  'id': user['id']?.toString() ?? user['_id']?.toString()
+                };
+              }).where((user) => user['enrollmentId'] != null).toList();
           _isLoading = false;
         });
       } else {
@@ -138,7 +166,7 @@ class _ManageUserState extends State<ManageUser> {
                 try {
                   final result = await _apiService.deleteUser(userId);
                   if (!mounted) return;
-                  if (result['success']) {
+                  if (result is Map && result['success']) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text(result['message'] ?? 'User deleted successfully')),
                     );
@@ -165,40 +193,142 @@ class _ManageUserState extends State<ManageUser> {
 
   void _changePassword(dynamic user) {
     final userId = user['id']?.toString();
-    final passwordController = TextEditingController();
+    final email = user['email']?.toString();
     final parentContext = context;
 
-    if (userId == null) {
+    if (userId == null || email == null) {
       ScaffoldMessenger.of(parentContext).showSnackBar(
-        const SnackBar(content: Text('Invalid user ID')),
+        const SnackBar(content: Text('Invalid user ID or email')),
       );
       return;
     }
+
+    _forgotPassword(email, parentContext);
+  }
+
+  void _forgotPassword(String email, BuildContext parentContext) {
+    showDialog(
+      context: parentContext,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'Request Password Reset',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'A reset token will be generated for $email.',
+                style: GoogleFonts.poppins(fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                controller: TextEditingController(text: email),
+                enabled: false,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text('Cancel', style: GoogleFonts.poppins()),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () async {
+                Navigator.of(dialogContext).pop();
+                try {
+                  final forgetResult = await _apiService.forgetPassword(email: email);
+                  if (!mounted) return;
+
+                  if (forgetResult is Map && forgetResult['token'] != null) {
+                    final token = forgetResult['token']; // ✅ backend token
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(content: Text('Reset token received: $token')),
+                    );
+                    _enterResetToken(email, parentContext, presetToken: token);
+                  } else {
+                    ScaffoldMessenger.of(parentContext).showSnackBar(
+                      SnackBar(content: Text('Error: ${forgetResult['message'] ?? 'Failed to get reset token'}')),
+                    );
+                  }
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(parentContext).showSnackBar(
+                    SnackBar(content: Text('Error requesting reset token: $e')),
+                  );
+                }
+              },
+              child: Text('Send Token', style: GoogleFonts.poppins(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _enterResetToken(String email, BuildContext parentContext, {String? presetToken}) {
+    final tokenController = TextEditingController(text: presetToken ?? '');
+    final newPasswordController = TextEditingController();
 
     showDialog(
       context: parentContext,
       builder: (dialogContext) {
         return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text(
-            'Change Password',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-          ),
-          content: TextField(
-            controller: passwordController,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: 'New Password'),
+            'Reset Password',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Enter the reset token and your new password.',
+                style: GoogleFonts.poppins(fontSize: 14),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: tokenController,
+                decoration: InputDecoration(
+                  labelText: 'Reset Token',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: newPasswordController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'New Password',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
+              child: Text('Cancel', style: GoogleFonts.poppins()),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
               onPressed: () async {
-                final newPassword = passwordController.text.trim();
-                if (newPassword.isEmpty) {
+                final token = tokenController.text.trim();
+                final newPassword = newPasswordController.text.trim();
+                if (token.isEmpty || newPassword.isEmpty) {
                   ScaffoldMessenger.of(parentContext).showSnackBar(
-                    const SnackBar(content: Text('Password cannot be empty')),
+                    const SnackBar(content: Text('Token and new password cannot be empty')),
                   );
                   return;
                 }
@@ -206,33 +336,25 @@ class _ManageUserState extends State<ManageUser> {
                 Navigator.of(dialogContext).pop();
 
                 try {
-                  final result = await _apiService.putRequest(
-                    '/user/update/$userId',
-                    data: {
-                      'name': user['name'],
-                      'email': user['email'],
-                      'role': user['role'],
-                      'schoolId': user['schoolId'],
-                      'password': newPassword,
-                    },
-                  );
-
-                  if (result != null && (result['id'] != null || result['data'] != null)) {
+                  final resetResult = await _apiService.resetPassword(token: token, newPassword: newPassword);
+                  if (!mounted) return;
+                  if (resetResult is Map && resetResult['success']) {
                     ScaffoldMessenger.of(parentContext).showSnackBar(
-                      const SnackBar(content: Text('Password updated successfully')),
+                      const SnackBar(content: Text('Password reset successfully')),
                     );
                   } else {
                     ScaffoldMessenger.of(parentContext).showSnackBar(
-                      SnackBar(content: Text('Failed to update password')),
+                      SnackBar(content: Text('Error: ${resetResult['message'] ?? 'Failed to reset password'}')),
                     );
                   }
                 } catch (e) {
+                  if (!mounted) return;
                   ScaffoldMessenger.of(parentContext).showSnackBar(
-                    SnackBar(content: Text('Error changing password: $e')),
+                    SnackBar(content: Text('Error resetting password: $e')),
                   );
                 }
               },
-              child: const Text('Update'),
+              child: Text('Reset Password', style: GoogleFonts.poppins(color: Colors.white)),
             ),
           ],
         );

@@ -6,9 +6,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'dart:developer' as developer;
 import '../services/api_client.dart';
-import '../../model/result_model.dart';
-import '../../model/student_model.dart';
-import '../../model/subject_model.dart';
 
 class ResultReportScreen extends StatefulWidget {
   static const routeName = '/resultReport';
@@ -27,6 +24,9 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
   List<dynamic> assignedSubjects = [];
   List<dynamic> assignedClasses = [];
   List<dynamic> students = [];
+
+  /// new: semester filter (1,2,overall)
+  String selectedSemester = 'overall';
 
   @override
   void initState() {
@@ -99,10 +99,16 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
       for (var student in students) {
         final studentId = student['id'].toString();
         try {
-          final resultResponse = await _apiService.getOverallResult(studentId);
+          Map<String, dynamic>? resultResponse;
+          if (selectedSemester == 'overall') {
+            resultResponse = await _apiService.getOverallResult(studentId);
+          } else {
+            resultResponse = await _apiService.getOverallResult(studentId);
+          }
+
           if (resultResponse['success'] && resultResponse['data'] != null) {
             final result = resultResponse['data'];
-            result['studentName'] = student['name']; // attach name
+            result['studentName'] = student['name'];
             if (_isResultForAssignedSubjects(result)) {
               results.add(result);
             }
@@ -130,8 +136,14 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
 
   bool _isResultForAssignedSubjects(Map<String, dynamic> result) {
     final assignedSubjectIds = assignedSubjects.map((s) => s['id'].toString()).toSet();
-    final resultSubjectIds = (result['subjectDetails'] as List<dynamic>? ?? []).map((sd) => sd['subjectId'].toString()).toSet();
-    return resultSubjectIds.any((id) => assignedSubjectIds.contains(id));
+    final semesterWise = result['semesterWise'] ?? {};
+    for (var semester in ['1', '2']) {
+      final subjects = semesterWise[semester]?['subjects'] as Map<String, dynamic>? ?? {};
+      if (subjects.keys.any((id) => assignedSubjectIds.contains(id))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   CellValue _cell(dynamic v) {
@@ -164,13 +176,11 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
       ]);
     }
 
-    // Save to documents & downloads
     final dir = await getApplicationDocumentsDirectory();
     final file = File("${dir.path}/results_report.xlsx")
       ..createSync(recursive: true)
       ..writeAsBytesSync(excel.encode()!);
 
-    // Try saving to Downloads too
     try {
       final downloads = await getDownloadsDirectory();
       if (downloads != null) {
@@ -190,9 +200,7 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
   }
 
   Widget _buildAssessmentTile(Map<String, dynamic> resultData, String semester) {
-    final Map<String, dynamic> subjects = (semester == '1'
-        ? (resultData['semesterWise']?['1']?['subjects'] as Map<String, dynamic>?)
-        : (resultData['semesterWise']?['2']?['subjects'] as Map<String, dynamic>?)) ?? {};
+    final Map<String, dynamic> subjects = resultData['semesterWise']?[semester]?['subjects'] as Map<String, dynamic>? ?? {};
 
     return ExpansionTile(
       title: Text('Semester $semester Subjects'),
@@ -212,8 +220,8 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
                   'Total: ${subjectDetails['total']?.toStringAsFixed(2) ?? 'N/A'} | Grade: ${subjectDetails['grade'] ?? 'N/A'}',
                 ),
                 children: [
-                  _buildAssessmentDetails(subjectDetails['formativeAssesment'], 'Formative Assessment'),
-                  _buildAssessmentDetails(subjectDetails['summativeAssesment'], 'Summative Assessment'),
+                  _buildAssessmentDetails(subjectDetails['formativeAssessment'], 'Formative Assessment'),
+                  _buildAssessmentDetails(subjectDetails['summativeAssessment'], 'Summative Assessment'),
                 ],
               ),
             );
@@ -252,73 +260,70 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: isLoading ? null : _loadData,
-            tooltip: 'Refresh',
           ),
         ],
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : errorMessage != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 16)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadData,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue.shade700,
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        ),
-                        child: const Text('Retry', style: TextStyle(color: Colors.white)),
-                      ),
-                    ],
-                  ),
-                )
-              : results.isEmpty
-                  ? const Center(child: Text('No results available for your subjects', style: TextStyle(fontSize: 16)))
-                  : RefreshIndicator(
-                      onRefresh: _loadData,
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: results.length,
-                        itemBuilder: (context, index) {
-                          final result = results[index];
-                          return Card(
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            margin: const EdgeInsets.symmetric(vertical: 8),
-                            child: ExpansionTile(
-                              title: Text(
-                                result['studentName'] ?? 'Student',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      body: Column(
+        children: [
+          // 🔹 Semester filter dropdown
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: DropdownButtonFormField<String>(
+              value: selectedSemester,
+              decoration: const InputDecoration(
+                labelText: 'Select Semester',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: '1', child: Text('Semester 1')),
+                DropdownMenuItem(value: '2', child: Text('Semester 2')),
+                DropdownMenuItem(value: 'overall', child: Text('Overall Result')),
+              ],
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => selectedSemester = val);
+                  _loadData();
+                }
+              },
+            ),
+          ),
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : errorMessage != null
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 16)),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: _loadData,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade700,
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                               ),
-                              subtitle: Text(
-                                'Overall Grade: ${result['grandGrade']} | Overall Percentage: ${result['grandPercentage'].toStringAsFixed(2)}%',
-                                style: const TextStyle(color: Colors.grey),
-                              ),
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      _buildAssessmentTile(result, '1'),
-                                      _buildAssessmentTile(result, '2'),
-                                      const SizedBox(height: 8),
-                                      Text('Special Progress: ${result['semesterWise']?['1']?['specialProgress'] ?? result['semesterWise']?['2']?['specialProgress'] ?? 'N/A'}', style: const TextStyle(fontSize: 14)),
-                                      Text('Hobbies: ${result['semesterWise']?['1']?['hobbies'] ?? result['semesterWise']?['2']?['hobbies'] ?? 'N/A'}', style: const TextStyle(fontSize: 14)),
-                                      Text('Areas of Improvement: ${result['semesterWise']?['1']?['areasOfImprovement'] ?? result['semesterWise']?['2']?['areasOfImprovement'] ?? 'N/A'}', style: const TextStyle(fontSize: 14)),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                              child: const Text('Retry', style: TextStyle(color: Colors.white)),
                             ),
-                          );
-                        },
-                      ),
-                    ),
+                          ],
+                        ),
+                      )
+                    : results.isEmpty
+                        ? const Center(child: Text('No results available for your subjects', style: TextStyle(fontSize: 16)))
+                        : RefreshIndicator(
+                            onRefresh: _loadData,
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: results.length,
+                              itemBuilder: (context, index) {
+                                final result = results[index];
+                                return _buildStudentResultCard(result);
+                              },
+                            ),
+                          ),
+          ),
+        ],
+      ),
       floatingActionButton: results.isEmpty
           ? null
           : FloatingActionButton.extended(
@@ -328,6 +333,55 @@ class _ResultReportScreenState extends State<ResultReportScreen> {
               backgroundColor: Colors.blue.shade700,
               foregroundColor: Colors.white,
             ),
+    );
+  }
+
+  Widget _buildStudentResultCard(Map<String, dynamic> result) {
+    final studentName = result['studentName'] ?? 'Unknown Student';
+    final semesterWise = result['semesterWise'] ?? {};
+
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              studentName,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Overall Grade: ${result['grandGrade'] ?? 'N/A'} | Overall Percentage: ${result['grandPercentage']?.toStringAsFixed(2) ?? 'N/A'}%',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 12),
+
+            // show only selected semester (or both if overall)
+            if (selectedSemester == '1' || selectedSemester == 'overall')
+              _buildAssessmentTile(result, '1'),
+            if (selectedSemester == '2' || selectedSemester == 'overall')
+              _buildAssessmentTile(result, '2'),
+
+            const SizedBox(height: 8),
+            Text(
+              'Special Progress: ${semesterWise[selectedSemester]?['specialProgress'] ?? semesterWise['1']?['specialProgress'] ?? semesterWise['2']?['specialProgress'] ?? 'N/A'}',
+              style: const TextStyle(fontSize: 14),
+            ),
+            Text(
+              'Hobbies: ${semesterWise[selectedSemester]?['hobbies'] ?? semesterWise['1']?['hobbies'] ?? semesterWise['2']?['hobbies'] ?? 'N/A'}',
+              style: const TextStyle(fontSize: 14),
+            ),
+            Text(
+              'Areas of Improvement: ${semesterWise[selectedSemester]?['areasOfImprovement'] ?? semesterWise['1']?['areasOfImprovement'] ?? semesterWise['2']?['areasOfImprovement'] ?? 'N/A'}',
+              style: const TextStyle(fontSize: 14),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

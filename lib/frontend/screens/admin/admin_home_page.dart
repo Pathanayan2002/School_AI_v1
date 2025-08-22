@@ -216,7 +216,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
           _drawerItem(Icons.subject, 'Manage Subjects',
               const ManageSubjectsScreen()),
           _drawerItem(
-              Icons.class_, 'Manage Classes', const ManageClassesWithDivision()),
+              Icons.class_, 'Manage Classes', const ManageClasses()),
           _drawerItem(Icons.assignment, 'Assign Subjects & Classes',
               const AssignClassAndSubjectPage()),
           _drawerItem(Icons.list_alt, 'Assigned Subjects',
@@ -274,7 +274,7 @@ class _AdminHomePageState extends State<AdminHomePage> {
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const ManageClassesWithDivision())),
+                MaterialPageRoute(builder: (_) => const ManageClasses())),
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.deepPurple,
                 foregroundColor: Colors.white),

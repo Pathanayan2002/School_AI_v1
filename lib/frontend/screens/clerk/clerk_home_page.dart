@@ -52,7 +52,7 @@ class ClerkHomePage extends StatelessWidget {
       _DrawerItem(Icons.class_, 'Assign Class', const AssignClassToTeacherPage()),
       _DrawerItem(Icons.dashboard, 'Dashboard', ClerkHomePage(clerkId: clerkId)),
       _DrawerItem(Icons.security, 'Add Role', const RolePage()),
-      _DrawerItem(Icons.class_outlined, 'Manage Classes', const ManageClassesWithDivision()),
+      _DrawerItem(Icons.class_outlined, 'Manage Classes', const ManageClasses()),
       _DrawerItem(Icons.menu_book, 'Manage Subjects', const ManageSubjectsScreen()),
       _DrawerItem(Icons.bar_chart, 'Result Report', const ClerkResultReportPage()),
     ];

@@ -316,87 +316,93 @@ class _AssignClassAndSubjectPageState
   );
 }
 
-  Future<void> _unassignTeacherFromClass(
-      String classId, String teacherId, String teacherName, String className) async {
-    // Validate if the teacher is assigned to the class
-    final isAssigned = _classAssignments.any(
-        (a) => a['classId'] == classId && a['teacherId'] == teacherId);
-    if (!isAssigned) {
-      if (kDebugMode) {
-        print('Teacher $teacherId is not assigned to class $classId in _classAssignments');
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $teacherName is not assigned to $className'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
+ Future<void> _unassignTeacherFromClass(
+    String classId, String teacherId, String teacherName, String className) async {
+  // Validate if the teacher is assigned to the class
+  final isAssigned = _classAssignments.any(
+      (a) => a['classId'] == classId && a['teacherId'] == teacherId);
+  if (!isAssigned) {
+    if (kDebugMode) {
+      print('Teacher $teacherId is not assigned to class $classId in _classAssignments');
     }
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Confirm Unassign"),
-        content: Text("Are you sure you want to unassign $teacherName from $className?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Unassign"),
-          ),
-        ],
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Error: $teacherName is not assigned to $className'),
+        backgroundColor: Colors.red,
       ),
     );
+    return;
+  }
 
-    if (confirm != true) return;
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text("Confirm Unassign"),
+      content: Text("Are you sure you want to unassign $teacherName from $className?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text("Unassign"),
+        ),
+      ],
+    ),
+  );
 
-    try {
-      if (kDebugMode) {
-        print('Unassigning teacher: $teacherId from class: $classId');
-      }
-      await _apiService.removeTeachersFromClass(
-  classId: int.parse(classId), // make sure this is an int
-  teacherIds: [int.parse(teacherId)], // send list of ints
-);
+  if (confirm != true) return;
 
+  try {
+    if (kDebugMode) {
+      print('Unassigning teacher: $teacherId from class: $classId');
+    }
+    final res = await _apiService.removeTeachersFromClass(
+      classId: int.parse(classId), // Ensure classId is an int
+      teacherIds: [int.parse(teacherId)], // Send list of ints
+    );
 
-      if (kDebugMode) {
-        print('Unassign class response: ');
-      }
+    if (kDebugMode) {
+      print('Unassign class response: $res');
+    }
 
-      if (['message'] == 'Teachers removed successfully') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Teacher unassigned successfully'),
-            backgroundColor: Colors.green,
-          ),
+    // Check the response message correctly
+    if (res['message'] == 'Teachers removed successfully') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Teacher unassigned successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      // Update _classAssignments to remove the unassigned teacher
+      setState(() {
+        _classAssignments.removeWhere(
+          (a) => a['classId'] == classId && a['teacherId'] == teacherId,
         );
-        await _fetchData();
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to unassign: ${['message'] ?? 'Unknown error'}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
+      });
+      // Optionally, fetch fresh data to ensure consistency
+      await _fetchData();
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: ${e.toString()}'),
+          content: Text('Failed to unassign: ${res['message'] ?? 'Unknown error'}'),
           backgroundColor: Colors.red,
         ),
       );
-      if (kDebugMode) {
-        print('Unassign teacher error: $e');
-      }
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Error: ${e.toString()}'),
+        backgroundColor: Colors.red,
+      ),
+    );
+    if (kDebugMode) {
+      print('Unassign teacher error: $e');
     }
   }
-
+}
   // ------------------- SUBJECT ASSIGNMENT --------------------
   void _showAssignSubjectDialog(String classId) {
   Map<String, dynamic>? selectedTeacher;
